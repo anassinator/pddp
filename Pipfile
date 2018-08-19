@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+gym = "==0.10.*"
+numpy = ">=1.14.0"
+six = ">=1.11.0"
+torch = "==0.4.1"
+tqdm = "==4.24.*"
+
+[dev-packages]
+yapf = "==0.22.0"
+pytest = "*"
+pytest-benchmark = "*"
+pytest-xdist = "*"
+
+[requires]

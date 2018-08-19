@@ -1,0 +1,12 @@
+language: python
+python:
+  - "2.7"
+  - "3.6"
+cache: pip
+install:
+  - pip install pipenv
+  - pip install $(pipenv lock --dev -r)
+  - python setup.py install
+script:
+  - pytest --benchmark-skip
+  - yapf --diff --recursive .

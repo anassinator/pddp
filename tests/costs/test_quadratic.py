@@ -1,0 +1,75 @@
+"""Unit tests for pddp.costs.quadratic."""
+
+import torch
+import pytest
+
+from pddp.costs.quadratic import *
+from pddp.models import GaussianVariable
+from pddp.models.utils.encoding import StateEncoding
+from pddp.controllers.utils.autodiff import grad, jacobian
+
+N = 50
+M = 20
+
+STATE_ENCODINGS = [
+    StateEncoding.FULL_COVARIANCE_MATRIX,
+    StateEncoding.UPPER_TRIANGULAR_CHOLESKY,
+    StateEncoding.VARIANCE_ONLY,
+    StateEncoding.STANDARD_DEVIATION_ONLY,
+    StateEncoding.IGNORE_UNCERTAINTY,
+]
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.parametrize("encoding", STATE_ENCODINGS)
+def test_qrcost(encoding, terminal):
+    Q = torch.randn(N, N)
+    R = torch.randn(M, M)
+    Q_terminal = torch.randn(N, N)
+    x_goal = torch.randn(N)
+    u_goal = torch.randn(M)
+    cost = QRCost(Q, R, Q_terminal, x_goal, u_goal)
+
+    x = GaussianVariable.random(N)
+    z = x.encode(encoding)
+    u = torch.randn(M, requires_grad=True) if not terminal else None
+
+    l = cost(z, u, 0, terminal, encoding)
+
+    assert l.shape == torch.Size([])
+
+    l_x = grad(l, x.mean(), create_graph=True)
+    l_xx = jacobian(l_x, x.mean())
+
+    Q_ = Q_terminal + Q_terminal.t() if terminal else Q + Q.t()
+    assert l_xx.isclose(Q_, 1e-3).all()
+
+    if not terminal:
+        l_u = grad(l, u, create_graph=True)
+        l_ux = jacobian(l_u, x.mean())
+        l_uu = jacobian(l_u, u)
+
+        assert l_uu.isclose(R + R.t(), 1e-3).all()
+
+        # Test batch.
+        Z = z.repeat(N, 1)
+        U = u.repeat(N, 1)
+        L = cost(Z, U, 0, terminal, encoding)
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.parametrize("encoding", STATE_ENCODINGS)
+def test_benchmark_qrcost(benchmark, encoding, terminal):
+    Q = torch.randn(N, N)
+    R = torch.randn(M, M)
+    Q_terminal = torch.randn(N, N)
+    x_goal = torch.randn(N)
+    u_goal = torch.randn(M)
+    cost = QRCost(Q, R, Q_terminal, x_goal, u_goal)
+
+    Z = torch.stack(
+        [GaussianVariable.random(N).encode(encoding) for _ in range(10)])
+    U = torch.randn(10, M)
+    I = torch.arange(10)
+
+    benchmark(cost, Z, U, I, terminal=terminal, encoding=encoding)
