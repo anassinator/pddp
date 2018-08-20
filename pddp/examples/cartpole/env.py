@@ -52,15 +52,18 @@ class CartpoleEnv(GymEnv):
         """Augmented state size (int)."""
         return self._model.state_size
 
-    def get_state(self):
+    def get_state(self, var=1e-6):
         """Gets the current state of the environment.
+
+        Args:
+            var (Tensor<0>): Variance scaling.
 
         Returns:
             State distribution (GaussianVariable<augmented_state_size>).
         """
         state = augment_state(self._state, self._model.angular_indices,
                               self._model.non_angular_indices)
-        return GaussianVariable(state, var=1e-6 * torch.ones_like(state))
+        return GaussianVariable(state, var=var * torch.ones_like(state))
 
 
 class _CartPoleEnv(gym.Env):
@@ -118,8 +121,9 @@ class _CartPoleEnv(gym.Env):
         return self.state, reward, done, {}
 
     def reset(self):
-        self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
-        self.state[2] += np.pi  # Point the pole down.
+        # self.state = self.np_random.uniform(low=-0.05, high=0.05, size=(4,))
+        # self.state[2] += np.pi  # Point the pole down.
+        self.state = np.array([0, 0, np.pi, 0])
         return self.state
 
     def render(self, mode="human"):

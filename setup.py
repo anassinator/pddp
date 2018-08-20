@@ -22,7 +22,7 @@ INSTALL_REQUIRES = [
     "numpy>=1.14.0",
     "six>=1.11.0",
     "torch==0.4.1",
-    "tqdm==4.24.*",
+    "tqdm==4.25.*",
 ]
 
 # Parse version information.

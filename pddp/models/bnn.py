@@ -14,10 +14,15 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Bayesian neural network dynamics models."""
 
-import tqdm
 import torch
 import inspect
+import warnings
 import numpy as np
+
+with warnings.catch_warnings():
+    # Ignore potential warning when in Jupyter environment.
+    warnings.simplefilter("ignore")
+    from tqdm.autonotebook import trange
 
 from functools import partial
 from torch.nn import Parameter
@@ -25,7 +30,7 @@ from collections import Iterable, OrderedDict
 
 from .base import DynamicsModel
 from ..utils.classproperty import classproperty
-from .utils.encoding import StateEncoding, decode_mean, decode_var, encode
+from .utils.encoding import StateEncoding, decode_mean, decode_std, encode
 
 
 def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
@@ -80,7 +85,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 n_iter=500,
                 reg_scale=1e-2,
                 quiet=False,
-                tqdm_class=tqdm.tqdm,
+                resample=False,
                 **kwargs):
             """Fits the dynamics model.
 
@@ -91,16 +96,14 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 n_iter (int): Number of iterations.
                 reg_scale (float): Regularization scale.
                 quiet (bool): Whether to print anything to screen or not.
-                tqdm_class (class): `tqdm` class for progress bar output. Can
-                    be completely silenced by setting `quiet=True`.
             """
             optimizer = torch.optim.Adam(
                 (p for p in self.parameters() if p.requires_grad), amsgrad=True)
 
-            with tqdm_class(range(n_iter), desc="BNN", disable=quiet) as pbar:
+            with trange(n_iter, desc="BNN", disable=quiet) as pbar:
                 for _ in pbar:
                     optimizer.zero_grad()
-                    output = self.model(X_)
+                    output = self.model(X_, resample=resample)
                     loss = -_gaussian_log_likelihood(dX, output).mean()
                     reg_loss = self.model.regularization()
                     loss += self.reg_scale * reg_loss / X_.shape[0]
@@ -114,6 +117,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                     i,
                     encoding=StateEncoding.DEFAULT,
                     resample=False,
+                    return_samples=False,
                     **kwargs):
             """Dynamics model function.
 
@@ -130,17 +134,20 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             """
             # Moment match.
             mean = decode_mean(z, encoding)
-            var = decode_var(z, encoding)
-            dist = torch.distributions.Normal(mean, var)
+            std = decode_std(z, encoding)
+            dist = torch.distributions.Normal(mean, std)
             x = dist.sample(torch.Size([self.n_particles]))
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
             dx = self.model(x_, resample=resample)
 
+            if return_samples:
+                return x + dx
+
             M = mean + dx.mean(dim=0)
-            V = dx.var(dim=0)
-            return encode(M, V=V, encoding=encoding)
+            S = dx.std(dim=0)
+            return encode(M, S=S, encoding=encoding)
 
     return BNNDynamicsModel
 
@@ -358,7 +365,7 @@ def bayesian_model(in_features,
                    bias_initializer=partial(
                        torch.nn.init.uniform_, a=-1.0, b=1.0),
                    initial_p=0.5,
-                   dropout_layers=BDropout,
+                   dropout_layers=CDropout,
                    input_dropout=None):
     """Constructs and initializes a Bayesian neural network with dropout.
 

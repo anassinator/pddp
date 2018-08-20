@@ -72,14 +72,17 @@ class GymEnv(Env):
         if self._render:
             self._env.render()
 
-    def get_state(self):
+    def get_state(self, var=1e-6):
         """Gets the current state of the environment.
+
+        Args:
+            var (Tensor<0>): Variance scaling.
 
         Returns:
             State distribution (GaussianVariable<state_size>).
         """
         return GaussianVariable(
-            self._state, var=1e-6 * torch.ones_like(self._state))
+            self._state, var=var * torch.ones_like(self._state))
 
     def reset(self):
         """Resets the environment."""

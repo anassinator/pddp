@@ -17,11 +17,14 @@
 import torch
 import warnings
 
-import tqdm
+with warnings.catch_warnings():
+    # Ignore potential warning when in Jupyter environment.
+    warnings.simplefilter("ignore")
+    from tqdm.autonotebook import trange
 
 from .base import Controller
 from .utils.evaluation import eval_cost, eval_dynamics
-from ..models.utils.encoding import StateEncoding, infer_encoded_state_size, decode_var
+from ..models.utils.encoding import StateEncoding, decode_var
 
 
 class PDDPController(Controller):
@@ -74,33 +77,6 @@ class PDDPController(Controller):
         """Switches to evaluation mode."""
         self._is_training = False
 
-    def _sample(self, U, n_sample_trajectories, tqdm_class, quiet):
-        N_ = n_sample_trajectories * U.shape[0]
-
-        state_size = self._env.get_state().shape[0]
-        X_ = torch.empty(N_, state_size + self._model.action_size)
-        dX = torch.empty(N_, state_size)
-
-        pbar = tqdm_class(
-            range(n_sample_trajectories), desc="TRIALS", disable=quiet)
-        for trajectory in pbar:
-            base_i = U.shape[0] * trajectory
-            for i, u in enumerate(U):
-                u = u if trajectory == 0 else u.detach() + torch.randn_like(u)
-                u = u.detach()
-
-                x = self._env.get_state().mean().detach()
-                self._env.apply(u)
-                x_next = self._env.get_state().mean().detach()
-
-                j = base_i + i
-                X_[j] = torch.cat([x, u], dim=-1)
-                dX[j] = x_next - x
-
-            self._env.reset()
-
-        return X_, dX
-
     def fit(self,
             U,
             encoding=StateEncoding.DEFAULT,
@@ -110,7 +86,6 @@ class PDDPController(Controller):
             max_var=1.0,
             n_sample_trajectories=4,
             quiet=False,
-            tqdm_class=tqdm.tqdm,
             on_iteration=None,
             train_on_start=True,
             **kwargs):
@@ -127,8 +102,6 @@ class PDDPController(Controller):
             n_sample_trajectories (int): Number of trajectories to sample from
                 the environment at a time.
             quiet (bool): Whether to print anything to screen or not.
-            tqdm_class (class): `tqdm` class for progress bar output. Can be
-                completely silenced by setting `quiet=True`.
             on_iteration (callable): Function with the following signature:
                 Args:
                     iteration (int): Iteration index.
@@ -150,103 +123,95 @@ class PDDPController(Controller):
         # Backtracking line search candidates 0 < alpha <= 1.
         alphas = 1.1**(-torch.arange(10.0)**2)
 
-        # Reset regularization term.
-        self._mu = 1.0
-        self._delta = self._delta_0
+        while True:
+            # Reset regularization term.
+            self._mu = 1.0
+            self._delta = self._delta_0
 
-        if self._is_training and train_on_start:
-            # Sample trajectories and train model.
-            X_, dX = self._sample(U, n_sample_trajectories, tqdm_class, quiet)
-            self._model.fit(
-                X_,
-                dX,
-                quiet=quiet,
-                tqdm_class=tqdm_class,
-                **self._training_opts)
+            if self._is_training and train_on_start:
+                # Sample trajectories and train model.
+                Us = U.repeat(n_sample_trajectories, 1, 1)
+                Us[1:] += torch.randn_like(Us[1:])
+                X_, dX = _sample(self._env, Us, quiet)
 
-        # Get initial state distribution.
-        z0 = self._env.get_state().encode(encoding).detach()
-        encoded_state_size = z0.shape[-1]
+                self._model.fit(X_, dX, quiet=quiet, **self._training_opts)
 
-        changed = True
-        converged = False
-        pbar = tqdm_class(range(n_iterations), desc="PDDP", disable=quiet)
-        for i in pbar:
-            accepted = False
+            # Get initial state distribution.
+            z0 = self._env.get_state().encode(encoding).detach()
+            encoded_state_size = z0.shape[-1]
 
-            # Forward rollout only if it needs to be recomputed.
-            if changed:
-                Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                    z0, U, self._model, self._cost, encoding, self._model_opts,
-                    self._cost_opts)
-                J_opt = L.sum()
-                changed = False
+            changed = True
+            converged = False
+            train_on_start = True
+            pbar = trange(n_iterations, desc="PDDP", disable=quiet)
+            for i in pbar:
+                accepted = False
 
-            # Backward pass.
-            k, K = backward(
-                Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=self._mu)
+                # Forward rollout only if it needs to be recomputed.
+                if changed:
+                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
+                        z0, U, self._model, self._cost, encoding,
+                        self._model_opts, self._cost_opts)
+                    J_opt = L.sum()
+                    changed = False
 
-            # Backtracking line search.
-            for alpha in alphas:
-                Z_new, U_new = _control_law(self._model, Z, U, k, K, alpha,
-                                            encoding, self._model_opts)
-                J_new = _trajectory_cost(self._cost, Z_new, U_new, encoding,
-                                         self._cost_opts)
+                # Backward pass.
+                k, K = backward(
+                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=self._mu)
 
-                if J_new < J_opt:
-                    # Check if converged due to small change.
-                    if (J_opt - J_new).abs() / J_opt < tol:
-                        converged = True
+                # Backtracking line search.
+                for alpha in alphas:
+                    Z_new, U_new = _control_law(self._model, Z, U, k, K, alpha,
+                                                encoding, self._model_opts)
+                    J_new = _trajectory_cost(self._cost, Z_new, U_new, encoding,
+                                             self._cost_opts)
 
-                    J_opt = J_new
-                    Z = Z_new
-                    U = U_new
-                    changed = True
+                    if J_new < J_opt:
+                        # Check if converged due to small change.
+                        if (J_opt - J_new).abs() / J_opt < tol:
+                            converged = True
 
-                    # Decrease regularization term.
-                    self._delta = min(1.0, self._delta) / self._delta_0
-                    self._mu *= self._delta
-                    if self._mu <= self._mu_min:
-                        self._mu = 0.0
+                        J_opt = J_new
+                        Z = Z_new
+                        U = U_new
+                        changed = True
 
-                    accepted = True
+                        # Decrease regularization term.
+                        self._delta = min(1.0, self._delta) / self._delta_0
+                        self._mu *= self._delta
+                        if self._mu <= self._mu_min:
+                            self._mu = 0.0
+
+                        accepted = True
+                        break
+
+                pbar.set_postfix({
+                    "loss": J_opt.detach().cpu().numpy(),
+                    "reg": self._mu,
+                    "accepted": accepted,
+                })
+
+                if on_iteration:
+                    on_iteration(i, Z, U, J_opt, accepted, converged)
+
+                if not accepted:
+                    # Increase regularization term.
+                    self._delta = max(1.0, self._delta) * self._delta_0
+                    self._mu = max(self._mu_min, self._mu * self._delta)
+                    if self._mu >= max_reg:
+                        warnings.warn("exceeded max regularization term")
+                        break
+
+                if converged:
                     break
 
-            pbar.set_postfix({
-                "loss": J_opt.detach().numpy(),
-                "reg": self._mu,
-                "accepted": accepted,
-            })
-
-            if on_iteration:
-                on_iteration(i, Z, U, J_opt, accepted, converged)
-
-            if not accepted:
-                # Increase regularization term.
-                self._delta = max(1.0, self._delta) * self._delta_0
-                self._mu = max(self._mu_min, self._mu * self._delta)
-                if self._mu >= max_reg:
-                    warnings.warn("exceeded max regularization term")
-                    break
-
-            if converged:
+            if not self._is_training:
                 break
-
-            # Check uncertainty.
-            if self._is_training:
-                var = decode_var(Z[1:], encoding=encoding)
-                if (var >= max_var).any():
-                    # Resample trajectories and retrain.
-                    X_, dX = self._sample(U, n_sample_trajectories, tqdm_class,
-                                          quiet)
-                    self._model.fit(
-                        X_,
-                        dX,
-                        quiet=quiet,
-                        tqdm_class=tqdm_class,
-                        **self._training_opts)
-                    z0 = self._env.get_state().encode(encoding).detach()
-                    continue
+            else:
+                # Check if uncertainty is satisfactory.
+                var = decode_var(Z, encoding=encoding)
+                if (var < max_var).all():
+                    break
 
         return Z, U
 
@@ -434,6 +399,33 @@ def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0):
         V_zz = 0.5 * (V_zz + V_zz.t())  # To maintain symmetry.
 
     return k, K
+
+
+def _sample(env, Us, quiet=False):
+    n_sample_trajectories, N, _ = Us.shape
+    N_ = n_sample_trajectories * N
+
+    X_ = torch.empty(N_, env.state_size + env.action_size)
+    dX = torch.empty(N_, env.state_size)
+
+    pbar = trange(Us.shape[0], desc="TRIALS", disable=quiet)
+    for trajectory in pbar:
+        U = Us[trajectory]
+        base_i = N * trajectory
+        for i, u in enumerate(U):
+            u = u.detach()
+
+            x = env.get_state().mean().detach()
+            env.apply(u)
+            x_next = env.get_state().mean().detach()
+
+            j = base_i + i
+            X_[j] = torch.cat([x, u], dim=-1)
+            dX[j] = x_next - x
+
+        env.reset()
+
+    return X_, dX
 
 
 def _control_law(model,

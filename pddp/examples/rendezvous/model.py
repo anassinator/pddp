@@ -14,7 +14,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Multi-vehicle rendezvous dynamics model."""
 
-import tqdm
 import torch
 import numpy as np
 from torch.nn import Parameter
@@ -65,7 +64,7 @@ class RendezvousDynamicsModel(DynamicsModel):
         """Column indices of non-angular states (Tensor)."""
         return torch.arange(8).long()
 
-    def fit(self, X_, dX, quiet=False, tqdm_class=tqdm.tqdm, **kwargs):
+    def fit(self, X_, dX, quiet=False, **kwargs):
         """Fits the dynamics model.
 
         Args:
@@ -73,8 +72,6 @@ class RendezvousDynamicsModel(DynamicsModel):
                 trajectory.
             dX (Tensor<N, action_size>): Encoded next state distribution.
             quiet (bool): Whether to print anything to screen or not.
-            tqdm_class (class): `tqdm` class for progress bar output. Can be
-                completely silenced by setting `quiet=True`.
         """
         # No need: this is an exact dynamics model.
         pass
@@ -92,28 +89,27 @@ class RendezvousDynamicsModel(DynamicsModel):
             Next encoded state distribution (Tensor<..., encoded_state_size>).
         """
         dt = self.dt
-        m = self.m
-        alpha = self.alpha
 
         x = decode_mean(z, encoding)
         covar = decode_covar(z, encoding)
 
         # Define acceleration.
-        def acceleration(x_dot, u):
-            x_dot_dot = x_dot * (1 - alpha * dt / m) + u * dt / m
-            return x_dot_dot
-
         mean = torch.stack(
             [
                 x[..., 0] + x[..., 4] * dt,
                 x[..., 1] + x[..., 5] * dt,
                 x[..., 2] + x[..., 6] * dt,
                 x[..., 3] + x[..., 7] * dt,
-                x[..., 4] + acceleration(x[..., 4], u[..., 0]) * dt,
-                x[..., 5] + acceleration(x[..., 5], u[..., 1]) * dt,
-                x[..., 6] + acceleration(x[..., 6], u[..., 2]) * dt,
-                x[..., 7] + acceleration(x[..., 7], u[..., 3]) * dt,
+                x[..., 4] + self._acceleration(x[..., 4], u[..., 0]) * dt,
+                x[..., 5] + self._acceleration(x[..., 5], u[..., 1]) * dt,
+                x[..., 6] + self._acceleration(x[..., 6], u[..., 2]) * dt,
+                x[..., 7] + self._acceleration(x[..., 7], u[..., 3]) * dt,
             ],
             dim=-1)
 
         return encode(mean, C=covar, encoding=encoding)
+
+    def _acceleration(self, x_dot, u):
+        x_dot_dot = x_dot * (1 - self.alpha * self.dt / self.m)
+        x_dot_dot += u * self.dt / self.m
+        return x_dot_dot

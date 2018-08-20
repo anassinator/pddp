@@ -15,7 +15,6 @@
 """Pendulum dynamics model."""
 
 import torch
-import tqdm
 import numpy as np
 from torch.nn import Parameter
 from ...models.base import DynamicsModel
@@ -69,7 +68,7 @@ class PendulumDynamicsModel(DynamicsModel):
         """Column indices of non-angular states (Tensor)."""
         return torch.tensor([1]).long()
 
-    def fit(self, X_, dX, quiet=False, tqdm_class=tqdm.tqdm, **kwargs):
+    def fit(self, X_, dX, quiet=False, **kwargs):
         """Fits the dynamics model.
 
         Args:
@@ -77,8 +76,6 @@ class PendulumDynamicsModel(DynamicsModel):
                 trajectory.
             dX (Tensor<N, action_size>): Encoded next state distribution.
             quiet (bool): Whether to print anything to screen or not.
-            tqdm_class (class): `tqdm` class for progress bar output. Can be
-                completely silenced by setting `quiet=True`.
         """
         # No need: this is an exact dynamics model.
         pass

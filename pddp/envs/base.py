@@ -53,8 +53,11 @@ class Env():
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_state(self):
+    def get_state(self, var=1e-6):
         """Gets the current state of the environment.
+
+        Args:
+            var (Tensor<0>): Variance scaling.
 
         Returns:
             State distribution (GaussianVariable<state_size>).

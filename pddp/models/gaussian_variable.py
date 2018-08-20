@@ -114,7 +114,7 @@ class GaussianVariable(object):
             n = torch.distributions.MultivariateNormal(self.mean(),
                                                        self.covar())
         else:
-            n = torch.distributions.Normal(self.mean(), self.var())
+            n = torch.distributions.Normal(self.mean(), self.std())
         return n.sample(sample_shape)
 
     def encode(self, encoding=StateEncoding.DEFAULT):

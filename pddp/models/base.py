@@ -15,7 +15,6 @@
 """Base dynamics model."""
 
 import torch
-import tqdm
 
 from .utils.encoding import StateEncoding
 from ..utils.classproperty import classproperty
@@ -50,7 +49,7 @@ class DynamicsModel(torch.nn.Module):
         """Augmented state size (int)."""
         raise NotImplementedError
 
-    def fit(self, X_, dX, quiet=False, tqdm_class=tqdm.tqdm, **kwargs):
+    def fit(self, X_, dX, quiet=False, **kwargs):
         """Fits the dynamics model.
 
         Args:
@@ -58,8 +57,6 @@ class DynamicsModel(torch.nn.Module):
                 trajectory.
             dX (Tensor<N, action_size>): Encoded next state distribution.
             quiet (bool): Whether to print anything to screen or not.
-            tqdm_class (class): `tqdm` class for progress bar output. Can be
-                completely silenced by setting `quiet=True`.
         """
         raise NotImplementedError
 

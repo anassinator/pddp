@@ -52,15 +52,18 @@ class PendulumEnv(GymEnv):
         """Augmented state size (int)."""
         return self._model.state_size
 
-    def get_state(self):
+    def get_state(self, var=1e-6):
         """Gets the current state of the environment.
+
+        Args:
+            var (Tensor<0>): Variance scaling.
 
         Returns:
             State distribution (GaussianVariable<augmented_state_size>).
         """
         state = augment_state(self._state, self._model.angular_indices,
                               self._model.non_angular_indices)
-        return GaussianVariable(state, var=1e-6 * torch.ones_like(state))
+        return GaussianVariable(state, var=var * torch.ones_like(state))
 
 
 class _PendulumEnv(gym.Env):
