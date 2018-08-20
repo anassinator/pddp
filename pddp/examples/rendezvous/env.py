@@ -88,10 +88,8 @@ class _RendezvousEnv(gym.Env):
         return self.state, reward, done, {}
 
     def reset(self):
-        high = np.array([1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5])
-        self.state = self.np_random.uniform(low=-high, high=high)
-        self.state += np.array([-10, -10, 10, 10, 0, -5, 5, 0])
-        # self.state = np.array([-10, -10, 10, 10, 0, 0, 0, 0])
+        self.state = np.array([-10.0, -10.0, 10.0, 10.0, 0.0, -5.0, 5.0, 0.0])
+        self.state += 1e-2 * np.random.random(self.state.shape)
         return self.state
 
     def render(self, mode="human"):

@@ -52,7 +52,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
 
         """Bayesian neural network dynamics model."""
 
-        def __init__(self, reg_scale=1e-2, n_particles=100):
+        def __init__(self, reg_scale=1e-2, n_particles=10):
             """Constructs a BNNDynamicsModel.
 
             Args:
@@ -83,9 +83,9 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 X_,
                 dX,
                 n_iter=500,
-                reg_scale=1e-2,
+                reg_scale=1.0,
+                resample=True,
                 quiet=False,
-                resample=False,
                 **kwargs):
             """Fits the dynamics model.
 
@@ -95,6 +95,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 dX (Tensor<N, action_size>): Encoded next state distribution.
                 n_iter (int): Number of iterations.
                 reg_scale (float): Regularization scale.
+                resample (bool): Whether to resample during training or not.
                 quiet (bool): Whether to print anything to screen or not.
             """
             optimizer = torch.optim.Adam(
@@ -104,10 +105,12 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 for _ in pbar:
                     optimizer.zero_grad()
                     output = self.model(X_, resample=resample)
+
                     loss = -_gaussian_log_likelihood(dX, output).mean()
                     reg_loss = self.model.regularization()
                     loss += self.reg_scale * reg_loss / X_.shape[0]
                     pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
+
                     loss.backward()
                     optimizer.step()
 
@@ -127,10 +130,13 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 i (Tensor<...>): Time index.
                 encoding (int): StateEncoding enum.
                 resample (bool): Whether to force resample.
+                return_samples (bool): Whether to return all samples instead of
+                    the encoded state distribution.
 
             Returns:
                 Next encoded state distribution
-                    (Tensor<..., encoded_state_size>).
+                    (Tensor<..., encoded_state_size>) or next samples
+                    (Tensor<n_particles, ..., state_size>).
             """
             # Moment match.
             mean = decode_mean(z, encoding)

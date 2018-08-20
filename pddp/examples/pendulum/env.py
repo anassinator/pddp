@@ -117,10 +117,8 @@ class _PendulumEnv(gym.Env):
         return self.state, reward, done, {}
 
     def reset(self):
-        # high = np.array([0.05, 0.1])
-        # self.state = self.np_random.uniform(low=-high, high=high)
-        # self.state[0] += np.pi
         self.state = np.array([np.pi, 0.0])
+        self.state += 1e-2 * np.random.random(self.state.shape)
         return self.state
 
     def render(self, mode="human"):
