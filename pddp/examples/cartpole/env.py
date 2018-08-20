@@ -47,6 +47,11 @@ class CartpoleEnv(GymEnv):
         gym_env = _CartPoleEnv(model)
         super(CartpoleEnv, self).__init__(gym_env, render=render)
 
+    @property
+    def state_size(self):
+        """Augmented state size (int)."""
+        return self._model.state_size
+
     def get_state(self):
         """Gets the current state of the environment.
 
@@ -106,7 +111,7 @@ class _CartPoleEnv(gym.Env):
         x_next = reduce_state(z_next, self.model.angular_indices,
                               self.model.non_angular_indices)
 
-        self.state = x_next.detach().numpy()
+        self.state = x_next.detach().cpu().numpy()
         reward = 0.0
         done = False
 

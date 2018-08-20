@@ -25,7 +25,7 @@ from collections import Iterable, OrderedDict
 
 from .base import DynamicsModel
 from ..utils.classproperty import classproperty
-from .utils.encoding import StateEncoding, decode_mean, encode
+from .utils.encoding import StateEncoding, decode_mean, decode_var, encode
 
 
 def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
@@ -78,7 +78,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 X_,
                 dX,
                 n_iter=500,
-                reg_scale=1.0,
+                reg_scale=1e-2,
                 quiet=False,
                 tqdm_class=tqdm.tqdm,
                 **kwargs):
@@ -95,7 +95,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                     be completely silenced by setting `quiet=True`.
             """
             optimizer = torch.optim.Adam(
-                p for p in self.parameters() if p.requires_grad)
+                (p for p in self.parameters() if p.requires_grad), amsgrad=True)
 
             with tqdm_class(range(n_iter), desc="BNN", disable=quiet) as pbar:
                 for _ in pbar:
@@ -104,7 +104,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                     loss = -_gaussian_log_likelihood(dX, output).mean()
                     reg_loss = self.model.regularization()
                     loss += self.reg_scale * reg_loss / X_.shape[0]
-                    pbar.set_postfix({"loss": loss.detach().numpy()})
+                    pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
                     loss.backward()
                     optimizer.step()
 
@@ -128,10 +128,15 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 Next encoded state distribution
                     (Tensor<..., encoded_state_size>).
             """
+            # Moment match.
             mean = decode_mean(z, encoding)
-            x = torch.cat([mean, u], dim=-1)
-            x = x.expand(self.n_particles, *x.shape)
-            dx = self.model(x, resample=resample)
+            var = decode_var(z, encoding)
+            dist = torch.distributions.Normal(mean, var)
+            x = dist.sample(torch.Size([self.n_particles]))
+
+            u_ = u.expand(self.n_particles, *u.shape)
+            x_ = torch.cat([x, u_], dim=-1)
+            dx = self.model(x_, resample=resample)
 
             M = mean + dx.mean(dim=0)
             V = dx.var(dim=0)
@@ -352,7 +357,8 @@ def bayesian_model(in_features,
                        gain=torch.nn.init.calculate_gain("relu")),
                    bias_initializer=partial(
                        torch.nn.init.uniform_, a=-1.0, b=1.0),
-                   dropout_layers=CDropout,
+                   initial_p=0.5,
+                   dropout_layers=BDropout,
                    input_dropout=None):
     """Constructs and initializes a Bayesian neural network with dropout.
 
@@ -366,6 +372,7 @@ def bayesian_model(in_features,
             weights to pass to module.apply().
         bias_initializer (callable): Function to initialize all module
             biases to pass to module.apply().
+        initial_p (float): Initial dropout probability.
         dropout_layers (Dropout or list<Dropout>): Dropout type to apply to
             hidden layers.
         input_dropout (Dropout): Dropout to apply to input layer.
@@ -389,7 +396,7 @@ def bayesian_model(in_features,
     for i, (din, dout) in enumerate(zip(dims[:-1], dims[1:])):
         drop_i = dropout_layers[i]
         if inspect.isclass(drop_i):
-            drop_i = drop_i()
+            drop_i = drop_i(p=initial_p)
 
         modules["fc_{}".format(i)] = torch.nn.Linear(din, dout)
         if drop_i is not None:

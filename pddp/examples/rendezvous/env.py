@@ -81,7 +81,7 @@ class _RendezvousEnv(gym.Env):
             0,
             encoding=StateEncoding.IGNORE_UNCERTAINTY)
 
-        self.state = x_next.detach().numpy()
+        self.state = x_next.detach().cpu().numpy()
         reward = 0.0
         done = False
 
@@ -91,7 +91,7 @@ class _RendezvousEnv(gym.Env):
         # high = np.array([1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5])
         # self.state = self.np_random.uniform(low=-high, high=high)
         # self.state += np.array([-10, -10, 10, 10, 0, -5, 5, 0])
-        self.state = np.array([-10, -10, 10, 10, 0, -5, 5, 0])
+        self.state = np.array([-10, -10, 10, 10, 0, 0, 0, 0])
         return self.state
 
     def render(self, mode="human"):

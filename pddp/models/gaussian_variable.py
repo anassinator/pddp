@@ -39,6 +39,7 @@ class GaussianVariable(object):
         self._covar = covar
         self._var = var
         self._std = std
+        self._is_from_covar = covar is not None
 
     def __repr__(self):
         """String representation of GaussianVariable."""
@@ -109,7 +110,11 @@ class GaussianVariable(object):
             Sampled state (Tensor<state_size> or
             Tensor<sample_shape, state_size>).
         """
-        n = torch.distributions.MultivariateNormal(self.mean(), self.covar())
+        if self._is_from_covar:
+            n = torch.distributions.MultivariateNormal(self.mean(),
+                                                       self.covar())
+        else:
+            n = torch.distributions.Normal(self.mean(), self.var())
         return n.sample(sample_shape)
 
     def encode(self, encoding=StateEncoding.DEFAULT):

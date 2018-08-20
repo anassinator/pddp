@@ -47,6 +47,11 @@ class PendulumEnv(GymEnv):
         gym_env = _PendulumEnv(model)
         super(PendulumEnv, self).__init__(gym_env, render=render)
 
+    @property
+    def state_size(self):
+        """Augmented state size (int)."""
+        return self._model.state_size
+
     def get_state(self):
         """Gets the current state of the environment.
 
@@ -102,16 +107,17 @@ class _PendulumEnv(gym.Env):
         x_next = reduce_state(z_next, self.model.angular_indices,
                               self.model.non_angular_indices)
 
-        self.state = x_next.detach().numpy()
+        self.state = x_next.detach().cpu().numpy()
         reward = 0.0
         done = False
 
         return self.state, reward, done, {}
 
     def reset(self):
-        high = np.array([0.05, 0.1])
-        self.state = self.np_random.uniform(low=-high, high=high)
-        self.state[0] += np.pi
+        # high = np.array([0.05, 0.1])
+        # self.state = self.np_random.uniform(low=-high, high=high)
+        # self.state[0] += np.pi
+        self.state = np.array([np.pi, 0.0])
         return self.state
 
     def render(self, mode="human"):

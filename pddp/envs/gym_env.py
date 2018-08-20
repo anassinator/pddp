@@ -115,7 +115,7 @@ def _action_from_u(u, space_shape, space_type, space_bounds):
     else:
         action.clamp_(min_bounds[0], max_bounds[0])
 
-    action = action.detach().numpy()
+    action = action.detach().cpu().numpy()
     return action.astype(space_type)
 
 
