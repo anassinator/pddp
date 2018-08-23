@@ -46,19 +46,24 @@ class GaussianVariable(object):
         return "GaussianVariable({})".format(self.shape)
 
     @property
+    def device(self):
+        """Gaussian variable device."""
+        return self._mean.device
+
+    @property
     def dtype(self):
         """Gaussian variable dtype."""
         return self._mean.dtype
 
     @property
-    def shape(self):
-        """Gaussian variable mean shape."""
-        return self._mean.shape
-
-    @property
     def requires_grad(self):
         """Whether the gaussian variable requires gradients."""
         return self._mean.requires_grad
+
+    @property
+    def shape(self):
+        """Gaussian variable mean shape."""
+        return self._mean.shape
 
     def mean(self):
         """Mean column vector (Tensor<n>)."""
@@ -221,6 +226,22 @@ class GaussianVariable(object):
             other._var = other._var.to(*args, **kwargs)
         if other._std is not None:
             other._std = other._std.to(*args, **kwargs)
+        return other
+
+    def cpu(self):
+        """Returns a copy of this object in CPU memory."""
+        return self.to(device="cpu")
+
+    def cuda(self, *args, **kwargs):
+        """Returns a copy of this object in CUDA memory."""
+        other = self.clone()
+        other._mean = other._mean.cuda(*args, **kwargs)
+        if other._covar is not None:
+            other._covar = other._covar.cuda(*args, **kwargs)
+        if other._var is not None:
+            other._var = other._var.cuda(*args, **kwargs)
+        if other._std is not None:
+            other._std = other._std.cuda(*args, **kwargs)
         return other
 
     def double(self):

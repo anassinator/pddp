@@ -78,12 +78,13 @@ def batch_jacobian(f, x, m=None, **kwargs):
     dy_dx, = torch.autograd.grad(
         y_rep,
         x_rep,
-        torch.eye(m, dtype=x.dtype),
+        torch.eye(m, dtype=x.dtype, device=x.device),
         allow_unused=True,
         retain_graph=True,
         **kwargs)
 
     if dy_dx is None:
-        return torch.zeros(m, x.shape[-1], dtype=x.dtype, requires_grad=True)
+        return torch.zeros(
+            m, x.shape[-1], dtype=x.dtype, device=x.device, requires_grad=True)
 
     return dy_dx

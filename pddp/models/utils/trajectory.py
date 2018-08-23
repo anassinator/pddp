@@ -31,7 +31,7 @@ def mean_trajectory(X):
     if N == 0:
         raise ValueError("Trajectory cannot be empty")
 
-    X_ = torch.empty(N, X[0].shape[0], dtype=X[0].dtype)
+    X_ = torch.empty(N, X[0].shape[0], dtype=X[0].dtype, device=X[0].device)
     for i in range(N):
         X_[i] = X[i].mean()
     return X_
@@ -51,7 +51,7 @@ def sample_trajectory(X):
     if N == 0:
         raise ValueError("Trajectory cannot be empty")
 
-    X_ = torch.empty(N, X[0].shape[0], dtype=X[0].dtype)
+    X_ = torch.empty(N, X[0].shape[0], dtype=X[0].dtype, device=X[0].device)
     for i in range(N):
         X_[i] = X[i].sample()
     return X_

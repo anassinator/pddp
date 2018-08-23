@@ -74,6 +74,7 @@ def eval_cost(cost,
         return l, l_z, l_u, l_zz, l_uz, l_uu
 
     encoded_state_size = z.shape[-1]
+    tensor_opts = {"device": z.device, "dtype": z.dtype}
 
     z_rep = z.repeat(encoded_state_size, 1)
     u_rep = u.repeat(encoded_state_size, 1) if not terminal else None
@@ -85,14 +86,14 @@ def eval_cost(cost,
     l_z_rep, = torch.autograd.grad(
         l_rep,
         z_rep,
-        torch.ones(encoded_state_size, dtype=z.dtype),
+        torch.ones(encoded_state_size, **tensor_opts),
         create_graph=True)
     l_z = l_z_rep[0]
 
     l_zz, = torch.autograd.grad(
         l_z_rep,
         z_rep,
-        torch.eye(encoded_state_size, dtype=z.dtype),
+        torch.eye(encoded_state_size, **tensor_opts),
         allow_unused=True,
         retain_graph=True)
 
@@ -111,24 +112,24 @@ def eval_cost(cost,
         l_u_rep, = torch.autograd.grad(
             l_rep,
             u_rep,
-            torch.ones(action_size, dtype=z.dtype),
+            torch.ones(action_size, **tensor_opts),
             create_graph=True)
         l_u = l_u_rep[0]
 
         l_uz, = torch.autograd.grad(
             l_u_rep,
             z_rep,
-            torch.eye(action_size, dtype=z.dtype),
+            torch.eye(action_size, **tensor_opts),
             allow_unused=True,
             retain_graph=True)
 
         if l_uz is None:
-            l_uz = torch.zeros(action_size, encoded_state_size, dtype=z.dtype)
+            l_uz = torch.zeros(action_size, encoded_state_size, **tensor_opts)
 
         l_uu, = torch.autograd.grad(
             l_u_rep,
             u_rep,
-            torch.eye(action_size, dtype=z.dtype),
+            torch.eye(action_size, **tensor_opts),
             allow_unused=True,
             retain_graph=True)
 
@@ -155,6 +156,7 @@ def eval_dynamics(model, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
     """
     encoded_state_size = z.shape[-1]
     action_size = u.shape[-1]
+    tensor_opts = {"device": z.device, "dtype": z.dtype}
 
     z_rep = z.repeat(encoded_state_size, 1)
     u_rep = u.repeat(encoded_state_size, 1)
@@ -164,13 +166,13 @@ def eval_dynamics(model, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
     d_dz, = torch.autograd.grad(
         z_next_rep,
         z_rep,
-        torch.eye(encoded_state_size, dtype=z.dtype),
+        torch.eye(encoded_state_size, **tensor_opts),
         allow_unused=True,
         retain_graph=True)
     d_du, = torch.autograd.grad(
         z_next_rep,
         u_rep,
-        torch.eye(encoded_state_size, dtype=z.dtype),
+        torch.eye(encoded_state_size, **tensor_opts),
         allow_unused=True,
         retain_graph=True)
 

@@ -111,13 +111,17 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
         Encoded state vector(s) (Tensor<..., state_size>).
     """
     state_size = M.shape[-1]
+    tensor_opts = {
+        "device": M.device,
+        "dtype": M.dtype,
+        "requires_grad": M.requires_grad
+    }
     encoded_state_size = infer_encoded_state_size(M, encoding)
 
     if M.dim() == 1:
-        Z = torch.zeros(encoded_state_size, dtype=M.dtype, requires_grad=True)
+        Z = torch.zeros(encoded_state_size, **tensor_opts)
     else:
-        Z = torch.zeros(
-            M.shape[0], encoded_state_size, dtype=M.dtype, requires_grad=True)
+        Z = torch.zeros(M.shape[0], encoded_state_size, **tensor_opts)
 
     Z[..., :state_size] += M
 
@@ -138,7 +142,7 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
             L = C.potrf()
         elif C.dim() == 3:
             # TODO: Remove for-loop.
-            L = torch.zeros_like(C, requires_grad=True)
+            L = torch.zeros_like(C, requires_grad=M.requires_grad)
             for c, l in zip(C, L):
                 l += c.potrf()
         else:
@@ -214,7 +218,8 @@ def decode_covar(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             raise NotImplementedError("Expected a 1D or 2D tensor")
     elif encoding == StateEncoding.IGNORE_UNCERTAINTY:
         # Hard-code a unit normal distribution.
-        C = 1e-6 * torch.eye(state_size, state_size, dtype=Z.dtype)
+        C = 1e-6 * torch.eye(
+            state_size, state_size, dtype=Z.dtype, device=Z.device)
 
         if Z.dim() == 1:
             pass
@@ -223,7 +228,9 @@ def decode_covar(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         else:
             raise NotImplementedError("Expected a 1D or 2D tensor")
 
-        C.requires_grad_()
+        if Z.requires_grad:
+            C.requires_grad_()
+
         return C
     else:
         raise NotImplementedError("Unknown StateEncoding: {}".format(encoding))
@@ -252,7 +259,7 @@ def decode_var(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         return other.pow(2)
     elif encoding == StateEncoding.IGNORE_UNCERTAINTY:
         # Hard-code a unit normal distribution.
-        V = 1e-6 * torch.ones(state_size, dtype=Z.dtype)
+        V = 1e-6 * torch.ones(state_size, dtype=Z.dtype, device=Z.device)
 
         if Z.dim() == 1:
             pass
@@ -261,7 +268,9 @@ def decode_var(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         else:
             raise NotImplementedError("Expected a 1D or 2D tensor")
 
-        V.requires_grad_()
+        if Z.requires_grad:
+            V.requires_grad_()
+
         return V
     else:
         raise NotImplementedError("Unknown StateEncoding: {}".format(encoding))
@@ -291,7 +300,7 @@ def decode_std(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         return other
     elif encoding == StateEncoding.IGNORE_UNCERTAINTY:
         # Hard-code a unit normal distribution.
-        S = 1e-3 * torch.ones(state_size, dtype=Z.dtype)
+        S = 1e-3 * torch.ones(state_size, dtype=Z.dtype, device=Z.device)
 
         if Z.dim() == 1:
             pass
@@ -300,7 +309,9 @@ def decode_std(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         else:
             raise NotImplementedError("Expected a 1D or 2D tensor")
 
-        S.requires_grad_()
+        if Z.requires_grad:
+            S.requires_grad_()
+
         return S
     else:
         raise NotImplementedError("Unknown StateEncoding: {}".format(encoding))
@@ -330,7 +341,8 @@ def _split(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         mean, other = torch.split(Z, [state_size, n_other], dim=-1)
     else:
         mean = Z
-        other = torch.empty(0, dtype=Z.dtype, requires_grad=True)
+        other = torch.empty(
+            0, dtype=Z.dtype, device=Z.device, requires_grad=Z.requires_grad)
 
     return mean, other, state_size
 
@@ -356,10 +368,13 @@ def _C_from(C=None, V=None, S=None):
         return V.diag()
     elif V.dim() == 2:
         n, m = V.shape
-        C = torch.zeros(n, m, m, dtype=V.dtype)
+        C = torch.zeros(n, m, m, dtype=V.dtype, device=V.device)
         diag_x, diag_y = np.diag_indices(m)
         C[..., diag_x, diag_y] = V
-        C.requires_grad_()
+
+        if V.requires_grad:
+            C.requires_grad_()
+
         return C
     else:
         raise NotImplementedError("Expected either a 1D or 2D tensor")
@@ -429,15 +444,17 @@ def _L_from_flat_triu(X, size):
         The unflattened upper triangular matrix (Tensor<..., size, size).
     """
     if X.dim() == 1:
-        L = torch.zeros(size, size, dtype=X.dtype)
+        L = torch.zeros(size, size, dtype=X.dtype, device=X.device)
     elif X.dim() == 2:
-        L = torch.zeros(X.shape[0], size, size, dtype=X.dtype)
+        L = torch.zeros(X.shape[0], size, size, dtype=X.dtype, device=X.device)
     else:
         raise NotImplementedError
 
     triu_x, triu_y = np.triu_indices(size)
     L[..., triu_x, triu_y] = X
-    L.requires_grad_()
+
+    if X.requires_grad:
+        L.requires_grad_()
 
     return L
 

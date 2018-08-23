@@ -255,19 +255,19 @@ def forward(z0,
     """
     N, action_size = U.shape
     encoded_state_size = z0.shape[-1]
-    dtype = z0.dtype
+    tensor_opts = {"dtype": z0.dtype, "device": z0.device}
 
-    Z = torch.empty(N + 1, encoded_state_size, dtype=dtype)
-    F_z = torch.empty(N, encoded_state_size, encoded_state_size, dtype=dtype)
-    F_u = torch.empty(N, encoded_state_size, action_size, dtype=dtype)
+    Z = torch.empty(N + 1, encoded_state_size, **tensor_opts)
+    F_z = torch.empty(N, encoded_state_size, encoded_state_size, **tensor_opts)
+    F_u = torch.empty(N, encoded_state_size, action_size, **tensor_opts)
 
-    L = torch.empty(N + 1, dtype=dtype)
-    L_z = torch.empty(N + 1, encoded_state_size, dtype=dtype)
-    L_u = torch.empty(N, action_size, dtype=dtype)
-    L_zz = torch.empty(
-        N + 1, encoded_state_size, encoded_state_size, dtype=dtype)
-    L_uz = torch.empty(N, action_size, encoded_state_size, dtype=dtype)
-    L_uu = torch.empty(N, action_size, action_size, dtype=dtype)
+    L = torch.empty(N + 1, **tensor_opts)
+    L_z = torch.empty(N + 1, encoded_state_size, **tensor_opts)
+    L_u = torch.empty(N, action_size, **tensor_opts)
+    L_zz = torch.empty(N + 1, encoded_state_size, encoded_state_size,
+                       **tensor_opts)
+    L_uz = torch.empty(N, action_size, encoded_state_size, **tensor_opts)
+    L_uu = torch.empty(N, action_size, action_size, **tensor_opts)
 
     Z[0] = z0
     for i in range(N):
@@ -302,6 +302,7 @@ def forward(z0,
     return Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu
 
 
+@torch.no_grad()
 def Q(F_z, F_u, L_z, L_u, L_zz, L_uz, L_uu, V_z, V_zz):
     """Evaluates the first- and second-order derivatives of the Q-function.
 
@@ -339,6 +340,7 @@ def Q(F_z, F_u, L_z, L_u, L_zz, L_uz, L_uu, V_z, V_zz):
     return Q_z, Q_u, Q_zz, Q_uz, Q_uu
 
 
+@torch.no_grad()
 def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0):
     """Evaluates the backward pass.
 
@@ -368,13 +370,15 @@ def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0):
     """
     V_z = L_z[-1]
     V_zz = L_zz[-1]
-    reg = reg * torch.eye(V_zz.shape[0], dtype=V_zz.dtype)
 
     N, action_size = L_u.shape
     encoded_state_size = Z.shape[1]
 
-    k = torch.empty(N, action_size, dtype=Z.dtype)
-    K = torch.empty(N, action_size, encoded_state_size, dtype=Z.dtype)
+    tensor_opts = {"dtype": Z.dtype, "device": Z.device}
+    k = torch.empty(N, action_size, **tensor_opts)
+    K = torch.empty(N, action_size, encoded_state_size, **tensor_opts)
+
+    reg = reg * torch.eye(V_zz.shape[0], **tensor_opts)
 
     for i in range(N - 1, -1, -1):
         Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i], L_zz[i],
@@ -401,12 +405,14 @@ def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0):
     return k, K
 
 
+@torch.no_grad()
 def _sample(env, Us, quiet=False):
     n_sample_trajectories, N, _ = Us.shape
     N_ = n_sample_trajectories * N
 
-    X_ = torch.empty(N_, env.state_size + env.action_size)
-    dX = torch.empty(N_, env.state_size)
+    tensor_opts = {"dtype": Us.dtype, "device": Us.device}
+    X_ = torch.empty(N_, env.state_size + env.action_size, **tensor_opts)
+    dX = torch.empty(N_, env.state_size, **tensor_opts)
 
     pbar = trange(Us.shape[0], desc="TRIALS", disable=quiet)
     for trajectory in pbar:
@@ -415,9 +421,9 @@ def _sample(env, Us, quiet=False):
         for i, u in enumerate(U):
             u = u.detach()
 
-            x = env.get_state().mean().detach()
+            x = env.get_state().mean()
             env.apply(u)
-            x_next = env.get_state().mean().detach()
+            x_next = env.get_state().mean()
 
             j = base_i + i
             X_[j] = torch.cat([x, u], dim=-1)
@@ -428,6 +434,7 @@ def _sample(env, Us, quiet=False):
     return X_, dX
 
 
+@torch.no_grad()
 def _control_law(model,
                  Z,
                  U,
@@ -441,9 +448,9 @@ def _control_law(model,
     Z_new[0] = Z[0]
 
     for i in range(U.shape[0]):
-        z = Z[i].detach()
-        u = U[i].detach()
-        z_new = Z_new[i].detach()
+        z = Z[i]
+        u = U[i]
+        z_new = Z_new[i]
 
         dz = z_new - z
         du = alpha * (k[i] + K[i].matmul(dz))
@@ -451,32 +458,34 @@ def _control_law(model,
         u_new = u + du
         z_new_next = model(z_new, u_new, i, encoding, **model_opts)
 
-        Z_new[i + 1] = z_new_next.detach()
-        U_new[i] = u_new.detach()
+        Z_new[i + 1] = z_new_next
+        U_new[i] = u_new
 
     return Z_new, U_new
 
 
+@torch.no_grad()
 def _control_law_fast(Z, U, F_z, F_u, k, K, alpha):
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
 
     for i in range(U.shape[0]):
-        z = Z[i].detach()
-        u = U[i].detach()
-        z_new = Z_new[i].detach()
+        z = Z[i]
+        u = U[i]
+        z_new = Z_new[i]
 
         dz = z_new - z
         du = alpha * (k[i] + K[i].matmul(dz))
         dz_ = F_z[i].matmul(dz) + F_u[i].matmul(du)
 
-        Z_new[i + 1] = (Z[i + 1] + dz_).detach()
-        U_new[i] = (u + du).detach()
+        Z_new[i + 1] = Z[i + 1] + dz_
+        U_new[i] = u + du
 
     return Z_new, U_new
 
 
+@torch.no_grad()
 def _trajectory_cost(cost, Z, U, encoding=StateEncoding.DEFAULT, cost_opts={}):
     N = U.shape[0]
     I = torch.arange(N)

@@ -92,9 +92,10 @@ def reduce_state(x_, angular_indices, non_angular_indices):
     angles = torch.atan2(sin_angles, cos_angles)
 
     if x_.dim() == 1:
-        x = torch.empty(n_angles + n_others, dtype=x_.dtype)
+        x = torch.empty(n_angles + n_others, dtype=x_.dtype, device=x_.device)
     else:
-        x = torch.empty(x_.shape[0], n_angles + n_others, dtype=x_.dtype)
+        x = torch.empty(
+            x_.shape[0], n_angles + n_others, dtype=x_.dtype, device=x_.device)
 
     x[..., angular_indices] = angles
     x[..., non_angular_indices] = others
