@@ -4,9 +4,9 @@ import torch
 import pytest
 
 from pddp.examples import *
-from pddp.models import GaussianVariable
-from pddp.models.utils.encoding import StateEncoding
-from pddp.models.utils.angular import infer_augmented_state_size
+from pddp.utils.gaussian_variable import GaussianVariable
+from pddp.utils.encoding import StateEncoding
+from pddp.utils.angular import infer_augmented_state_size
 
 STATE_ENCODINGS = [
     StateEncoding.FULL_COVARIANCE_MATRIX,

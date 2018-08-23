@@ -15,7 +15,7 @@
 """Base controller."""
 
 import torch
-from ..models.utils.encoding import StateEncoding, infer_encoded_state_size
+from ..utils.encoding import StateEncoding, infer_encoded_state_size
 
 
 class Controller(torch.nn.Module):

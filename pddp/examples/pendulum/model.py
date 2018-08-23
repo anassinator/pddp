@@ -19,8 +19,8 @@ import numpy as np
 from torch.nn import Parameter
 from ...models.base import DynamicsModel
 from ...utils.classproperty import classproperty
-from ...models.utils.encoding import StateEncoding, decode_covar, decode_mean, encode
-from ...models.utils.angular import augment_state, complementary_indices, reduce_state
+from ...utils.encoding import StateEncoding, decode_covar, decode_mean, encode
+from ...utils.angular import augment_state, complementary_indices, reduce_state
 
 
 class PendulumDynamicsModel(DynamicsModel):

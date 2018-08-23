@@ -19,7 +19,7 @@ import torch
 from .model import CartpoleDynamicsModel
 
 from ...costs import QRCost
-from ...models.utils.angular import augment_state
+from ...utils.angular import augment_state
 
 
 class CartpoleCost(QRCost):

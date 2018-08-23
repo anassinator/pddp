@@ -15,7 +15,7 @@
 """Base cost functions."""
 
 import torch
-from ..models.utils.encoding import StateEncoding, decode_covar, decode_mean
+from ..utils.encoding import StateEncoding, decode_covar, decode_mean
 
 
 class Cost(torch.nn.Module):

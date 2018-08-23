@@ -15,8 +15,8 @@
 """Gaussian random variable."""
 
 import torch
-from .utils.encoding import (StateEncoding, encode, decode_covar, decode_mean,
-                             decode_var, decode_std)
+from .encoding import (StateEncoding, encode, decode_covar, decode_mean,
+                       decode_var, decode_std)
 
 
 class GaussianVariable(object):

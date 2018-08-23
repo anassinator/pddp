@@ -1,8 +1,8 @@
-"""Unit tests for pddp.controllers.utils.autodiff."""
+"""Unit tests for pddp.utils.autodiff."""
 
 import torch
 
-from pddp.controllers.utils.autodiff import *
+from pddp.utils.autodiff import *
 
 
 def test_grad():

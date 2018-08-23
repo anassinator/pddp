@@ -19,7 +19,7 @@ import torch
 from .model import RendezvousDynamicsModel
 
 from ...costs import QRCost
-from ...models.utils.angular import augment_state, infer_augmented_state_size
+from ...utils.angular import augment_state, infer_augmented_state_size
 
 
 class RendezvousCost(QRCost):

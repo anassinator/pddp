@@ -23,8 +23,8 @@ from gym.utils import seeding
 
 from ...envs import GymEnv
 from .model import RendezvousDynamicsModel
-from ...models.utils.encoding import StateEncoding
-from ...models.utils.angular import augment_state, reduce_state
+from ...utils.encoding import StateEncoding
+from ...utils.angular import augment_state, reduce_state
 
 
 class RendezvousEnv(GymEnv):

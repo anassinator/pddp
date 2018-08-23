@@ -23,8 +23,8 @@ with warnings.catch_warnings():
     from tqdm.autonotebook import trange
 
 from .base import Controller
-from .utils.evaluation import eval_cost, eval_dynamics
-from ..models.utils.encoding import StateEncoding, decode_var
+from ..utils.encoding import StateEncoding, decode_var
+from ..utils.evaluation import eval_cost, eval_dynamics
 
 
 class PDDPController(Controller):

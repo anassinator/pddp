@@ -23,9 +23,9 @@ from gym.utils import seeding
 
 from ...envs import GymEnv
 from .model import PendulumDynamicsModel
-from ...models.utils.encoding import StateEncoding
-from ...models.gaussian_variable import GaussianVariable
-from ...models.utils.angular import augment_state, reduce_state
+from ...utils.encoding import StateEncoding
+from ...utils.gaussian_variable import GaussianVariable
+from ...utils.angular import augment_state, reduce_state
 
 
 class PendulumEnv(GymEnv):

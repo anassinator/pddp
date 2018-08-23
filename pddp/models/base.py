@@ -16,7 +16,7 @@
 
 import torch
 
-from .utils.encoding import StateEncoding
+from ..utils.encoding import StateEncoding
 from ..utils.classproperty import classproperty
 
 

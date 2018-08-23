@@ -1,9 +1,9 @@
-"""Unit tests for pddp.models.utils.trajectory."""
+"""Unit tests for pddp.utils.trajectory."""
 
 import torch
 
-from pddp.models import GaussianVariable
-from pddp.models.utils.trajectory import *
+from pddp.utils.trajectory import *
+from pddp.utils.gaussian_variable import GaussianVariable
 
 
 def test_mean_trajectory():

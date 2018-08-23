@@ -14,7 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Probabilistic Differential Dynamic Programming library."""
 
-from . import controllers, costs, envs, models
+from . import controllers, costs, envs, models, utils
 from .__version__ import __version__
 
-__all__ = ["controllers", "costs", "envs", "models"]
+__all__ = ["controllers", "costs", "envs", "models", "utils"]

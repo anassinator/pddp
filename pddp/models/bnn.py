@@ -30,7 +30,7 @@ from collections import Iterable, OrderedDict
 
 from .base import DynamicsModel
 from ..utils.classproperty import classproperty
-from .utils.encoding import StateEncoding, decode_mean, decode_std, encode
+from ..utils.encoding import StateEncoding, decode_mean, decode_std, encode
 
 
 def bnn_dynamics_model_factory(state_size, action_size, hidden_features,

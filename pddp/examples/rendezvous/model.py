@@ -19,7 +19,7 @@ import numpy as np
 from torch.nn import Parameter
 from ...models.base import DynamicsModel
 from ...utils.classproperty import classproperty
-from ...models.utils.encoding import StateEncoding, decode_covar, decode_mean, encode
+from ...utils.encoding import StateEncoding, decode_covar, decode_mean, encode
 
 
 class RendezvousDynamicsModel(DynamicsModel):

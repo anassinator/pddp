@@ -4,9 +4,9 @@ import torch
 import pytest
 import operator
 
-from pddp.models import GaussianVariable
+from pddp.utils.gaussian_variable import GaussianVariable
 from pddp.costs import AggregateCost, Cost, QRCost
-from pddp.models.utils.encoding import StateEncoding
+from pddp.utils.encoding import StateEncoding
 
 N = 5
 M = 2

@@ -1,13 +1,13 @@
-"""Unit tests for pddp.controllers.utils.evaluation."""
+"""Unit tests for pddp.utils.evaluation."""
 
 import torch
 import pytest
 
 from pddp.examples import *
 from pddp.costs import QRCost
-from pddp.controllers.utils.evaluation import *
-from pddp.models.gaussian_variable import GaussianVariable
-from pddp.models.utils.angular import infer_augmented_state_size
+from pddp.utils.evaluation import *
+from pddp.utils.gaussian_variable import GaussianVariable
+from pddp.utils.angular import infer_augmented_state_size
 
 STATE_ENCODINGS = [
     StateEncoding.FULL_COVARIANCE_MATRIX,

@@ -15,8 +15,8 @@
 """Dynamics model and cost evaluation utilities."""
 
 import torch
-from ...models import GaussianVariable
-from ...models.utils.encoding import StateEncoding
+from .encoding import StateEncoding
+from .gaussian_variable import GaussianVariable
 
 
 def eval_cost(cost,

@@ -1,9 +1,9 @@
-"""Unit tests for pddp.models.gaussian_variable."""
+"""Unit tests for pddp.utils.gaussian_variable."""
 
 import torch
 import pytest
 
-from pddp.models.gaussian_variable import *
+from pddp.utils.gaussian_variable import *
 
 
 def _test_gaussian_variable(g):

@@ -4,9 +4,9 @@ import torch
 import pytest
 
 from pddp.costs.quadratic import *
-from pddp.models import GaussianVariable
-from pddp.models.utils.encoding import StateEncoding
-from pddp.controllers.utils.autodiff import grad, jacobian
+from pddp.utils.encoding import StateEncoding
+from pddp.utils.autodiff import grad, jacobian
+from pddp.utils.gaussian_variable import GaussianVariable
 
 N = 50
 M = 20

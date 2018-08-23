@@ -18,7 +18,7 @@ import gym
 import torch
 import numpy as np
 from .base import Env
-from ..models.gaussian_variable import GaussianVariable
+from ..utils.gaussian_variable import GaussianVariable
 
 
 class GymEnv(Env):

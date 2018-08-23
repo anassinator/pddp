@@ -1,9 +1,9 @@
-"""Unit tests for pddp.models.utils.constraint."""
+"""Unit tests for pddp.utils.constraint."""
 
 import torch
 import pytest
 
-from pddp.models.utils.constraint import *
+from pddp.utils.constraint import *
 
 N = 100
 BOUNDS = [

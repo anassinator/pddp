@@ -1,10 +1,10 @@
-"""Unit tests for pddp.models.utils.angular."""
+"""Unit tests for pddp.utils.angular."""
 
 import torch
 import pytest
 import numpy as np
 
-from pddp.models.utils.angular import *
+from pddp.utils.angular import *
 
 # Organized as angular_indices, non_angular_indices pairs.
 INDICES = [

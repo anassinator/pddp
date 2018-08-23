@@ -14,8 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Dynamics models."""
 
-from . import bnn, utils
+from . import bnn
 from .base import DynamicsModel
-from .gaussian_variable import GaussianVariable
 
-__all__ = ["DynamicsModel", "GaussianVariable", "bnn", "utils"]
+__all__ = ["DynamicsModel", "bnn"]

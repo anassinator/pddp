@@ -1,10 +1,10 @@
-"""Unit tests for pddp.models.utils.encoding."""
+"""Unit tests for pddp.utils.encoding."""
 
 import torch
 import pytest
 
-from pddp.models import GaussianVariable
-from pddp.models.utils.encoding import *
+from pddp.utils.encoding import *
+from pddp.utils.gaussian_variable import GaussianVariable
 
 STATE_ENCODINGS = [
     StateEncoding.FULL_COVARIANCE_MATRIX,

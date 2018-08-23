@@ -18,7 +18,7 @@ import torch
 import numpy as np
 
 from .base import Cost
-from ..models.utils.encoding import StateEncoding, decode_covar, decode_mean
+from ..utils.encoding import StateEncoding, decode_covar, decode_mean
 
 
 class QRCost(Cost):

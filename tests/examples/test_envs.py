@@ -4,7 +4,7 @@ import torch
 import pytest
 
 from pddp.examples import *
-from pddp.models.utils.angular import infer_augmented_state_size
+from pddp.utils.angular import infer_augmented_state_size
 
 ENVS = [
     cartpole.CartpoleEnv,
