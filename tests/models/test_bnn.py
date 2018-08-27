@@ -4,8 +4,8 @@ import torch
 import pytest
 
 from pddp.models.bnn import *
-from pddp.utils.gaussian_variable import GaussianVariable
 from pddp.utils.encoding import StateEncoding
+from pddp.utils.gaussian_variable import GaussianVariable
 
 N = 20
 STATE_SIZE = 4

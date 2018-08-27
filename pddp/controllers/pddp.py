@@ -24,8 +24,8 @@ with warnings.catch_warnings():
 
 from torch.utils.data import TensorDataset
 
-from .ilqr import (iLQRController, forward, backward, Q, _control_law,
-                   _trajectory_cost)
+from .ilqr import (iLQRController, forward, backward, Q, _linear_control_law,
+                   _control_law, _trajectory_cost)
 
 from ..utils.encoding import StateEncoding, decode_var
 from ..utils.evaluation import eval_cost, eval_dynamics
@@ -76,6 +76,7 @@ class PDDPController(iLQRController):
             max_reg=1e10,
             quiet=False,
             on_iteration=None,
+            linearize_dynamics=False,
             max_var=1.0,
             n_sample_trajectories=4,
             train_on_start=True,
@@ -98,6 +99,8 @@ class PDDPController(iLQRController):
                     J_opt (Tensor<0>): Iteration's total cost to-go.
                     accepted (bool): Whether the iteration was accepted or not.
                     converged (bool): Whether the iteration converged or not.
+            linearize_dynamics (bool): Whether to linearize the dynamics when
+                computing the control law.
             max_var (Tensor<0>): Maximum variance allowed before resampling
                 trajectories.
             n_sample_trajectories (int): Number of trajectories to sample from
@@ -153,8 +156,14 @@ class PDDPController(iLQRController):
 
                 # Backtracking line search.
                 for alpha in alphas:
-                    Z_new, U_new = _control_law(self._model, Z, U, k, K, alpha,
-                                                encoding, self._model_opts)
+                    if linearize_dynamics:
+                        Z_new, U_new = _linear_control_law(
+                            Z, U, F_z, F_u, k, K, alpha)
+                    else:
+                        Z_new, U_new = _control_law(self._model, Z, U, k, K,
+                                                    alpha, encoding,
+                                                    self._model_opts)
+
                     J_new = _trajectory_cost(self._cost, Z_new, U_new, encoding,
                                              self._cost_opts)
 
@@ -233,3 +242,5 @@ def _sample(env, Us, quiet=False):
             dX[j] = x_next - x
 
         env.reset()
+
+    return TensorDataset(X_, dX)

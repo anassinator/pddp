@@ -144,10 +144,11 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                     (Tensor<n_particles, ..., state_size>).
             """
             # Moment match.
+            # Sample manually to preserve gradients.
             mean = decode_mean(z, encoding)
             std = decode_std(z, encoding)
-            dist = torch.distributions.Normal(mean, std)
-            x = dist.sample(torch.Size([self.n_particles]))
+            x = mean.expand(self.n_particles, *mean.shape)
+            x = x + std * torch.randn_like(x)
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
@@ -234,7 +235,7 @@ class BDropout(torch.nn.Dropout):
         self.p = 1 - self.rate
         self.noise.data = torch.bernoulli(self.p.expand(x.shape))
 
-    def forward(self, x, resample=True, mask_dims=2, **kwargs):
+    def forward(self, x, resample=True, mask_dims=None, **kwargs):
         """Computes the binary dropout.
 
         Args:
@@ -244,6 +245,9 @@ class BDropout(torch.nn.Dropout):
         Returns:
             Output (Tensor).
         """
+        if mask_dims is None:
+            mask_dims = x.dim() - 1
+
         sample_shape = x.shape[-mask_dims:]
         if sample_shape != self.noise.shape:
             sample = x.view(-1, *sample_shape)[0]
@@ -338,52 +342,6 @@ class CDropout(BDropout):
             Module representation (str).
         """
         return "temperature={}".format(self.temperature)
-
-
-class TLNDropout(BDropout):
-
-    """Truncated log-normal dropout (NIPS 2017)."""
-
-    def __init__(self, interval=[-10, 0]):
-        super(TLNDropout, self).__init__()
-        self.register_buffer("interval", torch.tensor(interval))
-        self.logit_posterior_mean = Parameter(
-            -torch.log(1.0 / torch.tensor(1 - self.rate) - 1.0))
-        self.logit_posterior_std = logit_posterior_std
-
-    def regularization(self, weight, bias):
-        """Computes the regularization cost.
-
-        Args:
-            weight (Tensor): Weight tensor.
-            bias (Tensor): Bias tensor.
-
-        Returns:
-            Regularization cost (Tensor).
-        """
-        # Ignore weight regularization as their independent here.
-        bias_reg = (bias**2).sum() if bias is not None else 0
-        return self.reg * (weight_reg + bias_reg)
-
-    def _update_noise(self, x):
-        """Updates the dropout noise.
-
-        Args:
-            x (Tensor): Input.
-        """
-        pass
-
-    def forward(self, x, resample=True, mask_dims=2, **kwargs):
-        """Computes the binary dropout.
-
-        Args:
-            x (Tensor): Input.
-            resample (bool): Whether to force resample.
-
-        Returns:
-            Output (Tensor).
-        """
-        pass
 
 
 class BSequential(torch.nn.Sequential):

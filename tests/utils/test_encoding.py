@@ -177,6 +177,9 @@ def test_decode_mean_covar_var_std(encoding):
     # Verify differentiable.
     allow_unused = encoding == StateEncoding.IGNORE_UNCERTAINTY
     for i in range(N):
+        costs = mean, var, std
+        wrts = original_mean, original_covar, original_covar
+
         for j in range(M):
             for k in range(M):
                 torch.autograd.grad(
@@ -185,8 +188,6 @@ def test_decode_mean_covar_var_std(encoding):
                     allow_unused=allow_unused,
                     retain_graph=True)
 
-            costs = mean, var, std
-            wrts = original_mean, original_covar, original_covar
             for cost, wrt in zip(costs, wrts):
                 torch.autograd.grad(
                     cost[i, j],

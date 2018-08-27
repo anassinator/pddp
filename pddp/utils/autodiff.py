@@ -17,7 +17,7 @@
 import torch
 
 
-def grad(y, x, **kwargs):
+def grad(y, x, allow_unused=True, **kwargs):
     """Evaluates the gradient of y w.r.t x safely.
 
     Args:
@@ -30,7 +30,7 @@ def grad(y, x, **kwargs):
         Gradient (Tensor<n>).
     """
     dy_dx, = torch.autograd.grad(
-        y, x, retain_graph=True, allow_unused=True, **kwargs)
+        y, x, retain_graph=True, allow_unused=allow_unused, **kwargs)
 
     # The gradient is None if disconnected.
     dy_dx = dy_dx if dy_dx is not None else torch.zeros_like(x)
