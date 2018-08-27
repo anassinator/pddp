@@ -152,7 +152,11 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
+            if x_.dim() == 3:
+                x_ = x_.permute(1, 0, 2)
             dx = self.model(x_, resample=resample)
+            if dx.dim() == 3:
+                dx = dx.permute(1, 0, 2)
 
             if return_samples:
                 return x + dx
@@ -235,7 +239,7 @@ class BDropout(torch.nn.Dropout):
         self.p = 1 - self.rate
         self.noise.data = torch.bernoulli(self.p.expand(x.shape))
 
-    def forward(self, x, resample=True, mask_dims=None, **kwargs):
+    def forward(self, x, resample=False, mask_dims=2, **kwargs):
         """Computes the binary dropout.
 
         Args:
@@ -245,15 +249,13 @@ class BDropout(torch.nn.Dropout):
         Returns:
             Output (Tensor).
         """
-        if mask_dims is None:
-            mask_dims = x.dim() - 1
-
         sample_shape = x.shape[-mask_dims:]
         if sample_shape != self.noise.shape:
             sample = x.view(-1, *sample_shape)[0]
             self._update_noise(sample)
         elif resample:
             return x * torch.bernoulli(self.p.expand(x.shape))
+
         return x * self.noise
 
     def extra_repr(self):
@@ -310,7 +312,7 @@ class CDropout(BDropout):
         """
         self.noise.data = torch.rand_like(x)
 
-    def forward(self, x, resample=True, mask_dims=2, **kwargs):
+    def forward(self, x, resample=False, mask_dims=2, **kwargs):
         """Computes the concrete dropout.
 
         Args:
@@ -322,7 +324,7 @@ class CDropout(BDropout):
         """
         sample_shape = x.shape[-mask_dims:]
         noise = self.noise
-        if sample_shape != self.noise.shape:
+        if sample_shape != noise.shape:
             sample = x.view(-1, *sample_shape)[0]
             self._update_noise(sample)
             noise = self.noise
@@ -374,7 +376,7 @@ class BSequential(torch.nn.Sequential):
                         break
         return reg
 
-    def forward(self, x, resample=True, **kwargs):
+    def forward(self, x, resample=False, **kwargs):
         """Computes the model.
 
         Args:
