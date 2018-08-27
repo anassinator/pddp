@@ -72,13 +72,15 @@ class CartpoleDynamicsModel(DynamicsModel):
         """Column indices of non-angular states (Tensor)."""
         return torch.tensor([0, 1, 3]).long()
 
-    def fit(self, X_, dX, quiet=False, **kwargs):
+    def fit(self, dataset, quiet=False, **kwargs):
         """Fits the dynamics model.
 
         Args:
-            X_ (Tensor<N, state_size + action_size>): State-action pair
+            dataset
+                (Dataset<Tensor<N, state_size + action_size>,
+                         Tensor<N, action_size>>):
+                Dataset of state-action pair trajectory and next state
                 trajectory.
-            dX (Tensor<N, action_size>): Encoded next state distribution.
             quiet (bool): Whether to print anything to screen or not.
         """
         # No need: this is an exact dynamics model.

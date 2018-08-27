@@ -14,7 +14,15 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Probabilistic Differential Dynamic Programming library."""
 
-from . import controllers, costs, envs, models, utils
 from .__version__ import __version__
 
-__all__ = ["controllers", "costs", "envs", "models", "utils"]
+from . import controllers, costs, envs, models, utils
+
+# Re-export some stuff for better visibility.
+from .utils.encoding import StateEncoding
+from .utils.gaussian_variable import GaussianVariable
+
+__all__ = [
+    "controllers", "costs", "envs", "models", "utils", "GaussianVariable",
+    "StateEncoding"
+]

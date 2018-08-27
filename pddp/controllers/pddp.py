@@ -22,6 +22,8 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     from tqdm.autonotebook import trange
 
+from torch.utils.data import TensorDataset
+
 from .base import Controller
 from ..utils.encoding import StateEncoding, decode_var
 from ..utils.evaluation import eval_cost, eval_dynamics
@@ -132,9 +134,8 @@ class PDDPController(Controller):
                 # Sample trajectories and train model.
                 Us = U.repeat(n_sample_trajectories, 1, 1)
                 Us[1:] += torch.randn_like(Us[1:])
-                X_, dX = _sample(self._env, Us, quiet)
-
-                self._model.fit(X_, dX, quiet=quiet, **self._training_opts)
+                dataset = _sample(self._env, Us, quiet)
+                self._model.fit(dataset, quiet=quiet, **self._training_opts)
 
             # Get initial state distribution.
             z0 = self._env.get_state().encode(encoding).detach()
@@ -431,7 +432,7 @@ def _sample(env, Us, quiet=False):
 
         env.reset()
 
-    return X_, dX
+    return TensorDataset(X_, dX)
 
 
 @torch.no_grad()
@@ -465,7 +466,7 @@ def _control_law(model,
 
 
 @torch.no_grad()
-def _control_law_fast(Z, U, F_z, F_u, k, K, alpha):
+def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]

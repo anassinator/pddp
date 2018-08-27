@@ -52,7 +52,7 @@ class PendulumEnv(GymEnv):
         """Augmented state size (int)."""
         return self._model.state_size
 
-    def get_state(self, var=1e-6):
+    def get_state(self, var=1e-2):
         """Gets the current state of the environment.
 
         Args:

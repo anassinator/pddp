@@ -80,9 +80,9 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             self.model.resample()
 
         def fit(self,
-                X_,
-                dX,
+                dataset,
                 n_iter=500,
+                batch_size=128,
                 reg_scale=1.0,
                 resample=True,
                 quiet=False,
@@ -90,29 +90,34 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             """Fits the dynamics model.
 
             Args:
-                X_ (Tensor<N, state_size + action_size>): State-action pair
+                dataset
+                    (Dataset<Tensor<N, state_size + action_size>,
+                             Tensor<N, action_size>>):
+                    Dataset of state-action pair trajectory and next state
                     trajectory.
-                dX (Tensor<N, action_size>): Encoded next state distribution.
                 n_iter (int): Number of iterations.
+                batch_size (int): Batch size of each iteration.
                 reg_scale (float): Regularization scale.
                 resample (bool): Whether to resample during training or not.
                 quiet (bool): Whether to print anything to screen or not.
             """
-            optimizer = torch.optim.Adam(
-                (p for p in self.parameters() if p.requires_grad), amsgrad=True)
+            params = filter(lambda p: p.requires_grad, self.parameters())
+            optimizer = torch.optim.Adam(params, 1e-4)
 
-            with trange(n_iter, desc="BNN", disable=quiet) as pbar:
-                for _ in pbar:
-                    optimizer.zero_grad()
-                    output = self.model(X_, resample=resample)
+            X_, dX = dataset.tensors
+            N = X_.shape[0]
+            pbar = trange(n_iter, desc="BNN", disable=quiet)
+            for _ in pbar:
+                optimizer.zero_grad()
+                output = self.model(X_, resample=resample)
 
-                    loss = -_gaussian_log_likelihood(dX, output).mean()
-                    reg_loss = self.model.regularization()
-                    loss += self.reg_scale * reg_loss / X_.shape[0]
-                    pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
+                loss = -_gaussian_log_likelihood(dX, output).mean()
+                reg_loss = self.model.regularization() / N
+                loss += self.reg_scale * reg_loss
+                pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
 
-                    loss.backward()
-                    optimizer.step()
+                loss.backward()
+                optimizer.step()
 
         def forward(self,
                     z,
@@ -196,9 +201,10 @@ class BDropout(torch.nn.Dropout):
             reg (float): Regularization scale.
         """
         super(BDropout, self).__init__(**kwargs)
-        self.p = Parameter(torch.tensor(1 - p), requires_grad=False)
-        self.reg = Parameter(torch.tensor(reg), requires_grad=False)
-        self.noise = torch.bernoulli(self.p)
+        self.register_buffer("rate", torch.tensor(p))
+        self.p = 1 - self.rate
+        self.register_buffer("reg", torch.tensor(reg))
+        self.register_buffer("noise", torch.bernoulli(self.p))
 
     def regularization(self, weight, bias):
         """Computes the regularization cost.
@@ -210,9 +216,10 @@ class BDropout(torch.nn.Dropout):
         Returns:
             Regularization cost (Tensor).
         """
+        self.p = 1 - self.rate
         weight_reg = self.p * (weight**2).sum()
         bias_reg = (bias**2).sum() if bias is not None else 0
-        return 0.5 * self.reg**2 * (weight_reg + bias_reg)
+        return self.reg * (weight_reg + bias_reg)
 
     def resample(self):
         """Resamples the dropout noise."""
@@ -224,9 +231,10 @@ class BDropout(torch.nn.Dropout):
         Args:
             x (Tensor): Input.
         """
+        self.p = 1 - self.rate
         self.noise.data = torch.bernoulli(self.p.expand(x.shape))
 
-    def forward(self, x, resample=True, *args, **kwargs):
+    def forward(self, x, resample=True, mask_dims=2, **kwargs):
         """Computes the binary dropout.
 
         Args:
@@ -236,10 +244,21 @@ class BDropout(torch.nn.Dropout):
         Returns:
             Output (Tensor).
         """
-        if x.shape != self.noise.shape or resample:
-            self._update_noise(x)
-
+        sample_shape = x.shape[-mask_dims:]
+        if sample_shape != self.noise.shape:
+            sample = x.view(-1, *sample_shape)[0]
+            self._update_noise(sample)
+        elif resample:
+            return x * torch.bernoulli(self.p.expand(x.shape))
         return x * self.noise
+
+    def extra_repr(self):
+        """Formats module representation.
+
+        Returns:
+            Module representation (str).
+        """
+        return "rate={}".format(self.rate)
 
 
 class CDropout(BDropout):
@@ -287,7 +306,7 @@ class CDropout(BDropout):
         """
         self.noise.data = torch.rand_like(x)
 
-    def forward(self, x, resample=True, *args, **kwargs):
+    def forward(self, x, resample=True, mask_dims=2, **kwargs):
         """Computes the concrete dropout.
 
         Args:
@@ -297,13 +316,19 @@ class CDropout(BDropout):
         Returns:
             Output (Tensor).
         """
-        if x.shape != self.noise.shape or resample:
-            self._update_noise(x)
+        sample_shape = x.shape[-mask_dims:]
+        noise = self.noise
+        if sample_shape != self.noise.shape:
+            sample = x.view(-1, *sample_shape)[0]
+            self._update_noise(sample)
+            noise = self.noise
+        elif resample:
+            noise = torch.rand_like(x)
 
         self.p.data = self.logit_p.sigmoid()
-        concrete_p = self.p.log() - (1 - self.p).log() \
-                   + self.noise.log() - (1 - self.noise).log()
+        concrete_p = self.logit_p + noise.log() - (1 - noise).log()
         concrete_noise = (concrete_p / self.temperature).sigmoid()
+
         return x * concrete_noise
 
     def extra_repr(self):
@@ -313,6 +338,52 @@ class CDropout(BDropout):
             Module representation (str).
         """
         return "temperature={}".format(self.temperature)
+
+
+class TLNDropout(BDropout):
+
+    """Truncated log-normal dropout (NIPS 2017)."""
+
+    def __init__(self, interval=[-10, 0]):
+        super(TLNDropout, self).__init__()
+        self.register_buffer("interval", torch.tensor(interval))
+        self.logit_posterior_mean = Parameter(
+            -torch.log(1.0 / torch.tensor(1 - self.rate) - 1.0))
+        self.logit_posterior_std = logit_posterior_std
+
+    def regularization(self, weight, bias):
+        """Computes the regularization cost.
+
+        Args:
+            weight (Tensor): Weight tensor.
+            bias (Tensor): Bias tensor.
+
+        Returns:
+            Regularization cost (Tensor).
+        """
+        # Ignore weight regularization as their independent here.
+        bias_reg = (bias**2).sum() if bias is not None else 0
+        return self.reg * (weight_reg + bias_reg)
+
+    def _update_noise(self, x):
+        """Updates the dropout noise.
+
+        Args:
+            x (Tensor): Input.
+        """
+        pass
+
+    def forward(self, x, resample=True, mask_dims=2, **kwargs):
+        """Computes the binary dropout.
+
+        Args:
+            x (Tensor): Input.
+            resample (bool): Whether to force resample.
+
+        Returns:
+            Output (Tensor).
+        """
+        pass
 
 
 class BSequential(torch.nn.Sequential):
@@ -345,7 +416,7 @@ class BSequential(torch.nn.Sequential):
                         break
         return reg
 
-    def forward(self, x, resample=True, *args, **kwargs):
+    def forward(self, x, resample=True, **kwargs):
         """Computes the model.
 
         Args:
@@ -355,9 +426,12 @@ class BSequential(torch.nn.Sequential):
         Returns:
             Output (Tensor).
         """
-        if resample:
-            self.resample()
-        return super(BSequential, self).forward(x, *args, **kwargs)
+        for module in self._modules.values():
+            if isinstance(module, (BDropout, BSequential)):
+                x = module(x, resample=resample, **kwargs)
+            else:
+                x = module(x)
+        return x
 
 
 def bayesian_model(in_features,
