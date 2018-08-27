@@ -15,6 +15,7 @@
 """Controllers."""
 
 from .base import Controller
+from .ilqr import iLQRController
 from .pddp import PDDPController
 
-__all__ = ["Controller", "PDDPController"]
+__all__ = ["Controller", "iLQRController", "PDDPController"]
