@@ -60,8 +60,9 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 n_particles (int): Number of particles.
             """
             super(BNNDynamicsModel, self).__init__()
-            self.model = bayesian_model(state_size + action_size, state_size,
-                                        hidden_features, **kwargs)
+            self.model = bayesian_model(state_size + action_size,
+                                        2 * state_size, hidden_features,
+                                        **kwargs)
             self.reg_scale = reg_scale
             self.n_particles = n_particles
 
@@ -110,8 +111,10 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             for _ in pbar:
                 optimizer.zero_grad()
                 output = self.model(X_, resample=resample)
+                mean, log_std = output.split(
+                    [self.state_size, self.state_size], dim=-1)
 
-                loss = -_gaussian_log_likelihood(dX, output).mean()
+                loss = -_gaussian_log_likelihood(dX, mean, log_std.exp()).mean()
                 reg_loss = self.model.regularization() / N
                 loss += self.reg_scale * reg_loss
                 pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
@@ -126,6 +129,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                     encoding=StateEncoding.DEFAULT,
                     resample=False,
                     return_samples=False,
+                    use_predicted_std=False,
                     **kwargs):
             """Dynamics model function.
 
@@ -137,6 +141,8 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 resample (bool): Whether to force resample.
                 return_samples (bool): Whether to return all samples instead of
                     the encoded state distribution.
+                use_predicted_std (bool): Whether to use the predicted standard
+                    deviations in the inference or not.
 
             Returns:
                 Next encoded state distribution
@@ -149,18 +155,35 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             std = decode_std(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
             if x.dim() == 3:
-                z = torch.randn_like(x[:, 0, :]).unsqueeze(1).repeat(1, x.shape[1], 1)
+                # This is required to make batched jacobians correct.
+                eps = torch.randn_like(x[:, 0, :])
+                eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
             else:
-                z = torch.randn_like(x)
-            x = x + std * z
+                eps = torch.randn_like(x)
+            x = x + std * eps
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
+
             if x_.dim() == 3:
+                # Shuffle the dimensions for batch jacobians.
                 x_ = x_.permute(1, 0, 2)
-            dx = self.model(x_, resample=resample)
-            if dx.dim() == 3:
-                dx = dx.permute(1, 0, 2)
+
+            output = self.model(x_, resample=resample)
+            if output.dim() == 3:
+                # Unshuffle the dimensions for batch jacobians.
+                output = output.permute(1, 0, 2)
+
+            dx, dlog_std = output.split(
+                [self.state_size, self.state_size], dim=-1)
+            if use_predicted_std:
+                if dx.dim() == 3:
+                    # This is required to make batched jacobians correct.
+                    eps = torch.randn_like(dx[:, 0, :])
+                    eps = eps.unsqueeze(1).repeat(1, dx.shape[1], 1)
+                else:
+                    eps = torch.randn_like(dx)
+                dx = dx + dlog_std.exp() * eps
 
             if return_samples:
                 return x + dx
