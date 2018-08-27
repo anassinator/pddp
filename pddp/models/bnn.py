@@ -148,7 +148,11 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             mean = decode_mean(z, encoding)
             std = decode_std(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
-            x = x + std * torch.randn_like(x)
+            if x.dim() == 3:
+                z = torch.randn_like(x[:, 0, :]).unsqueeze(1).repeat(1, x.shape[1], 1)
+            else:
+                z = torch.randn_like(x)
+            x = x + std * z
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
