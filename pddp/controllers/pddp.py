@@ -77,7 +77,7 @@ class PDDPController(iLQRController):
             quiet=False,
             on_iteration=None,
             linearize_dynamics=False,
-            max_var=1.0,
+            max_var=0.01,
             n_sample_trajectories=4,
             train_on_start=True,
             **kwargs):

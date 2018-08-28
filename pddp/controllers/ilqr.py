@@ -219,6 +219,8 @@ def forward(z0,
             L_uu (Tensor<N+1, action_size, action_size>):
                 Hessian of cost path w.r.t. action.
     """
+    U.detach_()
+
     N, action_size = U.shape
     encoded_state_size = z0.shape[-1]
     tensor_opts = {"dtype": z0.dtype, "device": z0.device}
