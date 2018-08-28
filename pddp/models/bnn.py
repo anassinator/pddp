@@ -279,6 +279,8 @@ class BDropout(torch.nn.Dropout):
         Args:
             x (Tensor): Input.
             resample (bool): Whether to force resample.
+            mask_dims (int): Number of dimensions to sample noise for
+                (0 for all).
 
         Returns:
             Output (Tensor).
@@ -352,6 +354,8 @@ class CDropout(BDropout):
         Args:
             x (Tensor): Input.
             resample (bool): Whether to force resample.
+            mask_dims (int): Number of dimensions to sample noise for
+                (0 for all).
 
         Returns:
             Output (Tensor).
