@@ -20,9 +20,12 @@ STATE_ENCODINGS = [
 def test_infer_encoded_state_size(encoding, size):
     x = GaussianVariable.random(5)
     z = x.encode(encoding)
-
     assert infer_encoded_state_size(x, encoding) == size
     assert infer_encoded_state_size(x, encoding) == z.shape[0]
+
+    X = torch.stack([torch.randn(5) for _ in range(3)])
+    assert infer_encoded_state_size(X, encoding) == size
+    assert infer_encoded_state_size(X, encoding) == z.shape[0]
 
 
 @pytest.mark.parametrize("encoding", STATE_ENCODINGS)

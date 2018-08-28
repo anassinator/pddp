@@ -206,6 +206,7 @@ def decode_covar(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         if other.dim() == 1:
             return other.diag()
         elif other.dim() == 2:
+            # TODO: Remove for-loop.
             return torch.stack([x.diag() for x in other])
         else:
             raise NotImplementedError("Expected a 1D or 2D tensor")
@@ -213,6 +214,7 @@ def decode_covar(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         if other.dim() == 1:
             return other.diag().pow(2)
         elif other.dim() == 2:
+            # TODO: Remove for-loop.
             return torch.stack([x.diag().pow(2) for x in other])
         else:
             raise NotImplementedError("Expected a 1D or 2D tensor")
@@ -469,7 +471,7 @@ def _batch_diag_from_flat(X, size):
     Returns:
         The diagonal elements of the matrix (Tensor<..., size>).
     """
-    return X[:, range(0, X.shape[-1], size + 1)]
+    return X[..., range(0, X.shape[-1], size + 1)]
 
 
 def _batch_diag_from_flat_triu_cholesky(X, size):
@@ -485,4 +487,4 @@ def _batch_diag_from_flat_triu_cholesky(X, size):
         The diagonal elements of the recomposed matrix (Tensor<..., size>).
     """
     L = _L_from_flat_triu(X, size)
-    return L.pow(2).sum(dim=1)
+    return L.pow(2).sum(dim=-2)

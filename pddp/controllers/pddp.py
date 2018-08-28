@@ -210,8 +210,8 @@ class PDDPController(iLQRController):
                 break
             else:
                 # Check if uncertainty is satisfactory.
-                var = decode_var(Z, encoding=encoding)
-                if (var < max_var).all():
+                var = decode_var(Z, encoding=encoding).max()
+                if var < max_var:
                     break
 
         return Z, U

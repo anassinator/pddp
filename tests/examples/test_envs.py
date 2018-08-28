@@ -4,7 +4,6 @@ import torch
 import pytest
 
 from pddp.examples import *
-from pddp.utils.angular import infer_augmented_state_size
 
 ENVS = [
     cartpole.CartpoleEnv,
@@ -22,9 +21,7 @@ MODELS = [
 @pytest.mark.parametrize("env_class, model_class", zip(ENVS, MODELS))
 def test_forward(env_class, model_class):
     with env_class() as env:
-        model = model_class(0.1)
         u = torch.randn(env.action_size)
         env.apply(u)
         x = env.get_state()
-        assert x.shape[0] == infer_augmented_state_size(
-            model.angular_indices, model.non_angular_indices)
+        assert x.shape[0] == model_class.state_size

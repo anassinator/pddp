@@ -125,11 +125,10 @@ class _CartPoleEnv(gym.Env):
         self.state += 1e-2 * np.random.random(self.state.shape)
         return self.state
 
-    def render(self, mode="human"):
+    def render(self, mode="human", N=1):
         screen_width = 600
         screen_height = 400
 
-        N = 5
         world_width = 5.0
         scale = screen_width / world_width
         carty = 100  # TOP OF CART

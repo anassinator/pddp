@@ -155,35 +155,42 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             std = decode_std(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
             if x.dim() == 3:
-                # This is required to make batched jacobians correct.
+                # This is required to make batched jacobians correct as the
+                # batches are in the second dimension and should share the same
+                # samples.
                 eps = torch.randn_like(x[:, 0, :])
                 eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
             else:
                 eps = torch.randn_like(x)
+
             x = x + std * eps
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
 
             if x_.dim() == 3:
-                # Shuffle the dimensions for batch jacobians.
+                # Shuffle the dimensions for the proper masks to be used in
+                # batch jacobians.
                 x_ = x_.permute(1, 0, 2)
 
             output = self.model(x_, resample=resample)
             if output.dim() == 3:
-                # Unshuffle the dimensions for batch jacobians.
+                # Unshuffle the dimensions.
                 output = output.permute(1, 0, 2)
 
-            dx, dlog_std = output.split(
+            dx, log_std = output.split(
                 [self.state_size, self.state_size], dim=-1)
             if use_predicted_std:
                 if dx.dim() == 3:
-                    # This is required to make batched jacobians correct.
+                    # This is required to make batched jacobians correct as the
+                    # batches are in the second dimension and should share the
+                    # same samples.
                     eps = torch.randn_like(dx[:, 0, :])
                     eps = eps.unsqueeze(1).repeat(1, dx.shape[1], 1)
                 else:
                     eps = torch.randn_like(dx)
-                dx = dx + dlog_std.exp() * eps
+
+                dx = dx + log_std.exp() * eps
 
             if return_samples:
                 return x + dx

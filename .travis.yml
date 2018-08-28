@@ -8,5 +8,5 @@ install:
   - pip install $(pipenv lock --dev -r)
   - python setup.py install
 script:
-  - pytest --benchmark-skip
+  - pytest --benchmark-skip -vv
   - yapf --diff --recursive .
