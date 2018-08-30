@@ -22,10 +22,11 @@ import numpy as np
 with warnings.catch_warnings():
     # Ignore potential warning when in Jupyter environment.
     warnings.simplefilter("ignore")
-    from tqdm.autonotebook import trange
+    from tqdm.autonotebook import tqdm
 
 from functools import partial
 from torch.nn import Parameter
+from torch.utils.data import DataLoader
 from collections import Iterable, OrderedDict
 
 from .base import DynamicsModel
@@ -103,18 +104,20 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 quiet (bool): Whether to print anything to screen or not.
             """
             params = filter(lambda p: p.requires_grad, self.parameters())
-            optimizer = torch.optim.Adam(params, 1e-4)
+            optimizer = torch.optim.Adam(params, 1e-4, amsgrad=True)
 
-            X_, dX = dataset.tensors
-            N = X_.shape[0]
-            with trange(n_iter, desc="BNN", disable=quiet) as pbar:
-                for _ in pbar:
+            N = len(dataset)
+            dataloader = DataLoader(
+                dataset, batch_size=batch_size, shuffle=True)
+            datagen = _cycle(dataloader, n_iter)
+            with tqdm(datagen, total=n_iter, desc="BNN", disable=quiet) as pbar:
+                for x_, dx in pbar:
                     optimizer.zero_grad()
-                    output = self.model(X_, resample=resample)
+                    output = self.model(x_, resample=resample)
                     mean, log_std = output.split(
                         [self.state_size, self.state_size], dim=-1)
 
-                    loss = -_gaussian_log_likelihood(dX, mean,
+                    loss = -_gaussian_log_likelihood(dx, mean,
                                                      log_std.exp()).mean()
                     reg_loss = self.model.regularization() / N
                     loss += self.reg_scale * reg_loss
@@ -204,6 +207,25 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             return encode(M, S=S, encoding=encoding)
 
     return BNNDynamicsModel
+
+
+def _cycle(iterable, total):
+    """Cycles through an iterable until a total number of iterations is reached.
+
+    Args:
+        iterable (iterable): Non-exhaustive iterable to cycle through.
+        total (int): Total number of iterations to go through.
+
+    Yields:
+        Element from iterable.
+    """
+    i = 0
+    while True:
+        for x in iterable:
+            i += 1
+            yield x
+            if i == total:
+                return
 
 
 def _gaussian_log_likelihood(targets, pred_means, pred_stds=None):

@@ -80,6 +80,7 @@ class PDDPController(iLQRController):
             max_var=0.05,
             n_sample_trajectories=4,
             train_on_start=True,
+            concatenate_datasets=True,
             **kwargs):
         """Determines the optimal path to minimize the cost.
 
@@ -107,6 +108,8 @@ class PDDPController(iLQRController):
                 the environment at a time.
             train_on_start (bool): Whether to sample trajectories and train the
                 model at the start or not.
+            concatenate_datasets (bool): Whether to train on all data or just
+                the latest.
 
         Returns:
             Tuple of:
@@ -115,6 +118,9 @@ class PDDPController(iLQRController):
         """
         U = U.detach()
         N, action_size = U.shape
+
+        # Initial data set.
+        dataset = None
 
         # Backtracking line search candidates 0 < alpha <= 1.
         alphas = 1.1**(-torch.arange(10.0)**2)
@@ -128,7 +134,11 @@ class PDDPController(iLQRController):
                 # Sample trajectories and train model.
                 Us = U.repeat(n_sample_trajectories, 1, 1)
                 Us[1:] += torch.randn_like(Us[1:])
-                dataset = _sample(self._env, Us, quiet)
+                dataset_ = _sample(self._env, Us, quiet)
+                if concatenate_datasets and dataset is not None:
+                    dataset += dataset_
+                else:
+                    dataset = dataset_
                 self._model.fit(dataset, quiet=quiet, **self._training_opts)
 
             # Get initial state distribution.
