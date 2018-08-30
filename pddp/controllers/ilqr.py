@@ -117,67 +117,67 @@ class iLQRController(Controller):
 
         changed = True
         converged = False
-        pbar = trange(n_iterations, desc="iLQR", disable=quiet)
-        for i in pbar:
-            accepted = False
+        with trange(n_iterations, desc="iLQR", disable=quiet) as pbar:
+            for i in pbar:
+                accepted = False
 
-            # Forward rollout only if it needs to be recomputed.
-            if changed:
-                Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                    z0, U, self._model, self._cost, encoding, self._model_opts,
-                    self._cost_opts)
-                J_opt = L.sum()
-                changed = False
+                # Forward rollout only if it needs to be recomputed.
+                if changed:
+                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
+                        z0, U, self._model, self._cost, encoding,
+                        self._model_opts, self._cost_opts)
+                    J_opt = L.sum()
+                    changed = False
 
-            # Backward pass.
-            k, K = backward(
-                Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=self._mu)
+                # Backward pass.
+                k, K = backward(
+                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=self._mu)
 
-            # Backtracking line search.
-            for alpha in alphas:
-                Z_new, U_new = _control_law(self._model, Z, U, k, K, alpha,
-                                            encoding, self._model_opts)
-                J_new = _trajectory_cost(self._cost, Z_new, U_new, encoding,
-                                         self._cost_opts)
+                # Backtracking line search.
+                for alpha in alphas:
+                    Z_new, U_new = _control_law(self._model, Z, U, k, K, alpha,
+                                                encoding, self._model_opts)
+                    J_new = _trajectory_cost(self._cost, Z_new, U_new, encoding,
+                                             self._cost_opts)
 
-                if J_new < J_opt:
-                    # Check if converged due to small change.
-                    if (J_opt - J_new).abs() / J_opt < tol:
-                        converged = True
+                    if J_new < J_opt:
+                        # Check if converged due to small change.
+                        if (J_opt - J_new).abs() / J_opt < tol:
+                            converged = True
 
-                    J_opt = J_new
-                    Z = Z_new
-                    U = U_new
-                    changed = True
+                        J_opt = J_new
+                        Z = Z_new
+                        U = U_new
+                        changed = True
 
-                    # Decrease regularization term.
-                    self._delta = min(1.0, self._delta) / self._delta_0
-                    self._mu *= self._delta
-                    if self._mu <= self._mu_min:
-                        self._mu = 0.0
+                        # Decrease regularization term.
+                        self._delta = min(1.0, self._delta) / self._delta_0
+                        self._mu *= self._delta
+                        if self._mu <= self._mu_min:
+                            self._mu = 0.0
 
-                    accepted = True
+                        accepted = True
+                        break
+
+                pbar.set_postfix({
+                    "loss": J_opt.detach().cpu().numpy(),
+                    "reg": self._mu,
+                    "accepted": accepted,
+                })
+
+                if on_iteration:
+                    on_iteration(i, Z, U, J_opt, accepted, converged)
+
+                if not accepted:
+                    # Increase regularization term.
+                    self._delta = max(1.0, self._delta) * self._delta_0
+                    self._mu = max(self._mu_min, self._mu * self._delta)
+                    if self._mu >= max_reg:
+                        warnings.warn("exceeded max regularization term")
+                        break
+
+                if converged:
                     break
-
-            pbar.set_postfix({
-                "loss": J_opt.detach().cpu().numpy(),
-                "reg": self._mu,
-                "accepted": accepted,
-            })
-
-            if on_iteration:
-                on_iteration(i, Z, U, J_opt, accepted, converged)
-
-            if not accepted:
-                # Increase regularization term.
-                self._delta = max(1.0, self._delta) * self._delta_0
-                self._mu = max(self._mu_min, self._mu * self._delta)
-                if self._mu >= max_reg:
-                    warnings.warn("exceeded max regularization term")
-                    break
-
-            if converged:
-                break
 
         return Z, U
 

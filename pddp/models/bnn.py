@@ -107,20 +107,21 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
 
             X_, dX = dataset.tensors
             N = X_.shape[0]
-            pbar = trange(n_iter, desc="BNN", disable=quiet)
-            for _ in pbar:
-                optimizer.zero_grad()
-                output = self.model(X_, resample=resample)
-                mean, log_std = output.split(
-                    [self.state_size, self.state_size], dim=-1)
+            with trange(n_iter, desc="BNN", disable=quiet) as pbar:
+                for _ in pbar:
+                    optimizer.zero_grad()
+                    output = self.model(X_, resample=resample)
+                    mean, log_std = output.split(
+                        [self.state_size, self.state_size], dim=-1)
 
-                loss = -_gaussian_log_likelihood(dX, mean, log_std.exp()).mean()
-                reg_loss = self.model.regularization() / N
-                loss += self.reg_scale * reg_loss
-                pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
+                    loss = -_gaussian_log_likelihood(dX, mean,
+                                                     log_std.exp()).mean()
+                    reg_loss = self.model.regularization() / N
+                    loss += self.reg_scale * reg_loss
+                    pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
 
-                loss.backward()
-                optimizer.step()
+                    loss.backward()
+                    optimizer.step()
 
         def forward(self,
                     z,
@@ -129,6 +130,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                     encoding=StateEncoding.DEFAULT,
                     resample=False,
                     return_samples=False,
+                    moment_match=True,
                     use_predicted_std=False,
                     **kwargs):
             """Dynamics model function.
@@ -141,6 +143,7 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 resample (bool): Whether to force resample.
                 return_samples (bool): Whether to return all samples instead of
                     the encoded state distribution.
+                moment_match (bool): Whether to moment match or not.
                 use_predicted_std (bool): Whether to use the predicted standard
                     deviations in the inference or not.
 
@@ -163,7 +166,8 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
             else:
                 eps = torch.randn_like(x)
 
-            x = x + std * eps
+            if moment_match:
+                x = x + std * eps
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
@@ -232,15 +236,15 @@ class BDropout(torch.nn.Dropout):
     Representing Model Uncertainty in Deep Learning", 2016.
     """
 
-    def __init__(self, p=0.5, reg=1.0, **kwargs):
+    def __init__(self, rate=0.1, reg=1.0, **kwargs):
         """Constructs a BDropout.
 
         Args:
-            p (float): Dropout probability.
+            rate (float): Dropout rate.
             reg (float): Regularization scale.
         """
         super(BDropout, self).__init__(**kwargs)
-        self.register_buffer("rate", torch.tensor(p))
+        self.register_buffer("rate", torch.tensor(rate))
         self.p = 1 - self.rate
         self.register_buffer("reg", torch.tensor(reg))
         self.register_buffer("noise", torch.bernoulli(self.p))
@@ -310,15 +314,15 @@ class CDropout(BDropout):
     See: Gal Y., Hron, J., Kendall, A. "Concrete Dropout", 2017.
     """
 
-    def __init__(self, temperature=0.1, p=0.5, reg=1.0, **kwargs):
+    def __init__(self, temperature=0.1, rate=0.5, reg=1.0, **kwargs):
         """Constructs a CDropout.
 
         Args:
             temperature (float): Temperature.
-            p (float): Initial dropout probability.
+            rate (float): Initial dropout rate.
             reg (float): Regularization scale.
         """
-        super(CDropout, self).__init__(p, reg, **kwargs)
+        super(CDropout, self).__init__(rate, reg, **kwargs)
         self.temperature = Parameter(
             torch.tensor(temperature), requires_grad=False)
 

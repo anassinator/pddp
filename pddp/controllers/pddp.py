@@ -138,73 +138,83 @@ class PDDPController(iLQRController):
             changed = True
             converged = False
             train_on_start = True
-            pbar = trange(n_iterations, desc="PDDP", disable=quiet)
-            for i in pbar:
-                accepted = False
 
-                # Forward rollout only if it needs to be recomputed.
-                if changed:
-                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                        z0, U, self._model, self._cost, encoding,
-                        self._model_opts, self._cost_opts)
-                    J_opt = L.sum()
-                    changed = False
+            with trange(n_iterations, desc="PDDP", disable=quiet) as pbar:
+                for i in pbar:
+                    accepted = False
 
-                # Backward pass.
-                k, K = backward(
-                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=self._mu)
+                    # Forward rollout only if it needs to be recomputed.
+                    if changed:
+                        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
+                            z0, U, self._model, self._cost, encoding,
+                            self._model_opts, self._cost_opts)
+                        J_opt = L.sum()
+                        changed = False
 
-                # Backtracking line search.
-                for alpha in alphas:
-                    if linearize_dynamics:
-                        Z_new, U_new = _linear_control_law(
-                            Z, U, F_z, F_u, k, K, alpha)
-                    else:
-                        Z_new, U_new = _control_law(self._model, Z, U, k, K,
-                                                    alpha, encoding,
-                                                    self._model_opts)
+                    # Backward pass.
+                    k, K = backward(
+                        Z,
+                        F_z,
+                        F_u,
+                        L,
+                        L_z,
+                        L_u,
+                        L_zz,
+                        L_uz,
+                        L_uu,
+                        reg=self._mu)
 
-                    J_new = _trajectory_cost(self._cost, Z_new, U_new, encoding,
-                                             self._cost_opts)
+                    # Backtracking line search.
+                    for alpha in alphas:
+                        if linearize_dynamics:
+                            Z_new, U_new = _linear_control_law(
+                                Z, U, F_z, F_u, k, K, alpha)
+                        else:
+                            Z_new, U_new = _control_law(self._model, Z, U, k, K,
+                                                        alpha, encoding,
+                                                        self._model_opts)
 
-                    if J_new < J_opt:
-                        # Check if converged due to small change.
-                        if (J_opt - J_new).abs() / J_opt < tol:
-                            converged = True
+                        J_new = _trajectory_cost(self._cost, Z_new, U_new,
+                                                 encoding, self._cost_opts)
 
-                        J_opt = J_new
-                        Z = Z_new
-                        U = U_new
-                        changed = True
+                        if J_new < J_opt:
+                            # Check if converged due to small change.
+                            if (J_opt - J_new).abs() / J_opt < tol:
+                                converged = True
 
-                        # Decrease regularization term.
-                        self._delta = min(1.0, self._delta) / self._delta_0
-                        self._mu *= self._delta
-                        if self._mu <= self._mu_min:
-                            self._mu = 0.0
+                            J_opt = J_new
+                            Z = Z_new
+                            U = U_new
+                            changed = True
 
-                        accepted = True
+                            # Decrease regularization term.
+                            self._delta = min(1.0, self._delta) / self._delta_0
+                            self._mu *= self._delta
+                            if self._mu <= self._mu_min:
+                                self._mu = 0.0
+
+                            accepted = True
+                            break
+
+                    pbar.set_postfix({
+                        "loss": J_opt.detach().cpu().numpy(),
+                        "reg": self._mu,
+                        "accepted": accepted,
+                    })
+
+                    if on_iteration:
+                        on_iteration(i, Z, U, J_opt, accepted, converged)
+
+                    if not accepted:
+                        # Increase regularization term.
+                        self._delta = max(1.0, self._delta) * self._delta_0
+                        self._mu = max(self._mu_min, self._mu * self._delta)
+                        if self._mu >= max_reg:
+                            warnings.warn("exceeded max regularization term")
+                            break
+
+                    if converged:
                         break
-
-                pbar.set_postfix({
-                    "loss": J_opt.detach().cpu().numpy(),
-                    "reg": self._mu,
-                    "accepted": accepted,
-                })
-
-                if on_iteration:
-                    on_iteration(i, Z, U, J_opt, accepted, converged)
-
-                if not accepted:
-                    # Increase regularization term.
-                    self._delta = max(1.0, self._delta) * self._delta_0
-                    self._mu = max(self._mu_min, self._mu * self._delta)
-                    if self._mu >= max_reg:
-                        warnings.warn("exceeded max regularization term")
-                        break
-
-                if converged:
-                    break
 
             if not self._is_training:
                 break
@@ -226,21 +236,21 @@ def _sample(env, Us, quiet=False):
     X_ = torch.empty(N_, env.state_size + env.action_size, **tensor_opts)
     dX = torch.empty(N_, env.state_size, **tensor_opts)
 
-    pbar = trange(Us.shape[0], desc="TRIALS", disable=quiet)
-    for trajectory in pbar:
-        U = Us[trajectory]
-        base_i = N * trajectory
-        for i, u in enumerate(U):
-            u = u.detach()
+    with trange(Us.shape[0], desc="TRIALS", disable=quiet) as pbar:
+        for trajectory in pbar:
+            U = Us[trajectory]
+            base_i = N * trajectory
+            for i, u in enumerate(U):
+                u = u.detach()
 
-            x = env.get_state().mean()
-            env.apply(u)
-            x_next = env.get_state().mean()
+                x = env.get_state().mean()
+                env.apply(u)
+                x_next = env.get_state().mean()
 
-            j = base_i + i
-            X_[j] = torch.cat([x, u], dim=-1)
-            dX[j] = x_next - x
+                j = base_i + i
+                X_[j] = torch.cat([x, u], dim=-1)
+                dX[j] = x_next - x
 
-        env.reset()
+            env.reset()
 
     return TensorDataset(X_, dX)
