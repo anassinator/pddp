@@ -19,11 +19,13 @@ import torch
 from torch.nn import Parameter
 
 from ...models.base import DynamicsModel
+from ...utils.constraint import constrain_model
 from ...utils.classproperty import classproperty
-from ...utils.encoding import StateEncoding, decode_covar, decode_mean, encode
 from ...utils.angular import augment_state, reduce_state
+from ...utils.encoding import StateEncoding, decode_covar, decode_mean, encode
 
 
+@constrain_model(-10.0, 10.0)
 class CartpoleDynamicsModel(DynamicsModel):
 
     """Friction-less cartpole dynamics model.
@@ -35,7 +37,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         theta: 0 is pointing up and increasing clockwise.
     """
 
-    def __init__(self, dt, mc=1.0, mp=0.1, l=1.0, g=9.80665):
+    def __init__(self, dt, mc=0.5, mp=0.5, l=0.5, g=9.80665):
         """Constructs a CartpoleDynamicsModel.
 
         Args:

@@ -26,19 +26,26 @@ class CartpoleCost(QRCost):
 
     """Cartpole cost."""
 
-    def __init__(self):
-        """Constructs a CartpoleCost."""
+    def __init__(self, pole_length=0.5):
+        """Constructs a CartpoleCost.
+
+        Args:
+            pole_length (float): Pole length [m].
+        """
         model = CartpoleDynamicsModel
 
         Q_term = 100.0 * torch.eye(model.state_size)
-        Q = 100.0 * torch.eye(model.state_size)
+        Q = torch.zeros(model.state_size, model.state_size)
 
-        # Don't penalize instantaneous velocities as much.
+        # We minimize the distance between the tip of the pole and the goal.
         # Note: we are operating on the augmented state vectors here:
         #   [x, x', theta', sin(theta), cos(theta)]
-        Q[1, 1] = Q[2, 2] = 10.0
+        Q[0, 0] = 1.0
+        Q[1, 1] = Q[2, 2] = 0.1
+        Q[0, 3] = Q[3, 0] = pole_length
+        Q[3, 3] = Q[4, 4] = pole_length**2
 
-        R = torch.eye(model.action_size)
+        R = 0.1 * torch.eye(model.action_size)
 
         # Goal is not all zeroes after augmenting the state.
         x_goal = augment_state(

@@ -34,53 +34,96 @@ def constrain(u, min_bounds, max_bounds):
     return diff * u.tanh() + mean
 
 
-def constrain_env(env, min_bounds, max_bounds):
-    """Constrains the action space of the environment through a squash function.
+def constrain_env(min_bounds, max_bounds):
+    """Decorator that constrains the action space of an environment through a
+    squash function.
 
     Args:
-        env (Env): Environment.
         min_bounds (Tensor<action_size>): Minimum action bounds.
         max_bounds (Tensor<action_size>): Maximum action bounds.
+
+    Returns:
+        Decorator that constrains an Env.
     """
 
-    def apply_fn(u):
-        """Applies an action to the environment.
+    def decorator(cls):
 
-        Args:
-            u (Tensor<action_size>): Action vector.
-        """
-        u = constrain(u, min_bounds, max_bounds)
-        return _apply_fn(u)
+        def apply_fn(self, u):
+            """Applies an action to the environment.
 
-    # Monkey-patch the env.
-    _apply_fn = env.apply
-    env.apply = apply_fn
+            Args:
+                u (Tensor<action_size>): Action vector.
+            """
+            u = constrain(u, min_bounds, max_bounds)
+            return _apply_fn(self, u)
+
+        # Monkey-patch the env.
+        _apply_fn = cls.apply
+        cls.apply = apply_fn
+
+        return cls
+
+    return decorator
 
 
-def constrain_model(model, min_bounds, max_bounds):
-    """Constrains the action space of the model through a squash function.
+def constrain_model(min_bounds, max_bounds):
+    """Decorator that constrains the action space of a dynamics model through a
+    squash function.
 
     Args:
-        model (DynamicsModel): Dynamics model.
         min_bounds (Tensor<action_size>): Minimum action bounds.
         max_bounds (Tensor<action_size>): Maximum action bounds.
+
+    Returns:
+        Decorator that constrains a DynamicsModel.
     """
 
-    def forward_fn(z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
-        """Dynamics model function.
+    def decorator(cls):
 
-        Args:
-            z (Tensor<..., encoded_state_size>): Encoded state distribution.
-            u (Tensor<..., action_size>): Action vector(s).
-            i (Tensor<...>): Time index.
-            encoding (int): StateEncoding enum.
+        def init_fn(self, *args, **kwargs):
+            """Constructs a DynamicsModel."""
+            _init_fn(self, *args, **kwargs)
+            self.max_bounds = torch.nn.Parameter(
+                torch.tensor(max_bounds).expand(cls.action_size),
+                requires_grad=False)
+            self.min_bounds = torch.nn.Parameter(
+                torch.tensor(max_bounds).expand(cls.action_size),
+                requires_grad=False)
 
-        Returns:
-            Next encoded state distribution (Tensor<..., encoded_state_size>).
-        """
-        u = constrain(u, min_bounds, max_bounds)
-        return _forward_fn(z, u, i, encoding=encoding, **kwargs)
+        def forward_fn(self, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
+            """Dynamics model function.
 
-    # Monkey-patch the model.
-    _forward_fn = model.forward
-    model.forward = forward_fn
+            Args:
+                z (Tensor<..., encoded_state_size>): Encoded state distribution.
+                u (Tensor<..., action_size>): Action vector(s).
+                i (Tensor<...>): Time index.
+                encoding (int): StateEncoding enum.
+
+            Returns:
+                Next encoded state distribution
+                    (Tensor<..., encoded_state_size>).
+            """
+            u = constrain(u, min_bounds, max_bounds)
+            return _forward_fn(self, z, u, i, encoding=encoding, **kwargs)
+
+        def constrain_fn(self, u):
+            """Constrains an action through a squash function.
+
+            Args:
+                u (Tensor<..., action_size>): Action vector(s).
+
+            Returns:
+                Constrained action vector(s) (Tensor<..., action_size>).
+            """
+            return constrain(u, min_bounds, max_bounds)
+
+        # Monkey-patch the model.
+        _init_fn = cls.__init__
+        _forward_fn = cls.forward
+        cls.__init__ = init_fn
+        cls.forward = forward_fn
+        cls.constrain = constrain_fn
+
+        return cls
+
+    return decorator

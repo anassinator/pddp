@@ -29,7 +29,10 @@ from ...utils.angular import augment_state, reduce_state
 
 class RendezvousEnv(GymEnv):
 
-    """Multi-vehicle rendezvous environment."""
+    """Multi-vehicle rendezvous environment.
+
+    Note: This environment is preconstrained if the model is.
+    """
 
     def __init__(self, model=None, dt=0.05, render=False):
         """Constructs a RendezvousEnv.

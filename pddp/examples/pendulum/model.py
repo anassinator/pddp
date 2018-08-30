@@ -18,11 +18,13 @@ import torch
 import numpy as np
 from torch.nn import Parameter
 from ...models.base import DynamicsModel
+from ...utils.constraint import constrain_model
 from ...utils.classproperty import classproperty
 from ...utils.encoding import StateEncoding, decode_covar, decode_mean, encode
 from ...utils.angular import augment_state, complementary_indices, reduce_state
 
 
+@constrain_model(-1, 1)
 class PendulumDynamicsModel(DynamicsModel):
 
     """Friction-less pendulum dynamics model.
@@ -33,14 +35,14 @@ class PendulumDynamicsModel(DynamicsModel):
         theta: 0 is pointing up and increasing counter-clockwise.
     """
 
-    def __init__(self, dt, m=1.0, l=1.0, g=9.80665):
+    def __init__(self, dt, m=1.0, l=0.5, g=9.80665):
         """Constructs PendulumDynamicsModel.
 
         Args:
             dt (float): Time step [s].
-            m: Pendulum mass [kg].
-            l: Pendulum length [m].
-            g: Gravity acceleration [m/s^2].
+            m (float): Pendulum mass [kg].
+            l (float): Pendulum length [m].
+            g (float): Gravity acceleration [m/s^2].
         """
         super(PendulumDynamicsModel, self).__init__()
         self.dt = Parameter(torch.tensor(dt), requires_grad=False)

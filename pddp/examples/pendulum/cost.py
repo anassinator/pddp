@@ -26,19 +26,26 @@ class PendulumCost(QRCost):
 
     """Pendulum cost."""
 
-    def __init__(self):
-        """Constructs a PendulumCost."""
+    def __init__(self, pendulum_length=0.5):
+        """Constructs a PendulumCost.
+
+        Args:
+            pendulum_length (float): Pole length [m].
+        """
         model = PendulumDynamicsModel
 
         Q_term = 100.0 * torch.eye(model.state_size)
-        Q = 100.0 * torch.eye(model.state_size)
+        Q = torch.zeros(model.state_size, model.state_size)
 
+        # We minimize the distance between the tip of the pendulum and the goal.
         # Don't penalize instantaneous velocities as much.
         # Note: we are operating on the augmented state vectors here:
         #   [theta', sin(theta), cos(theta)]
-        Q[0, 0] = 1.0
+        Q[0, 0] = 0.1
+        Q[0, 1] = Q[1, 0] = pendulum_length
+        Q[1, 1] = Q[1, 1] = pendulum_length**2
 
-        R = torch.eye(model.action_size)
+        R = 0.1 * torch.eye(model.action_size)
 
         # Goal is not all zeroes after augmenting the state.
         x_goal = augment_state(

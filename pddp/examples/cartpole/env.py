@@ -30,7 +30,10 @@ from ...utils.angular import augment_state, reduce_state
 
 class CartpoleEnv(GymEnv):
 
-    """Cartpole environment."""
+    """Cartpole environment.
+
+    Note: This environment is preconstrained if the model is.
+    """
 
     def __init__(self, model=None, dt=0.05, render=False):
         """Constructs a CartpoleEnv.
