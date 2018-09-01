@@ -51,7 +51,7 @@ class RendezvousDynamicsModel(DynamicsModel):
 
     @classproperty
     def state_size(cls):
-        """Augmented state size (int)."""
+        """State size (int)."""
         return 8
 
     @classproperty

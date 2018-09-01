@@ -26,15 +26,20 @@ with warnings.catch_warnings():
 
 from functools import partial
 from torch.nn import Parameter
-from torch.utils.data import DataLoader
 from collections import Iterable, OrderedDict
+from torch.utils.data import DataLoader, TensorDataset
 
 from .base import DynamicsModel
 from ..utils.classproperty import classproperty
 from ..utils.encoding import StateEncoding, decode_mean, decode_std, encode
+from ..utils.angular import augment_state, reduce_state, infer_augmented_state_size
 
 
-def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
+def bnn_dynamics_model_factory(state_size,
+                               action_size,
+                               hidden_features,
+                               angular_indices=None,
+                               non_angular_indices=None,
                                **kwargs):
     """A BNNDynamicsModel factory.
 
@@ -48,24 +53,37 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
     Returns:
         BNNDynamicsModel class.
     """
+    angular = angular_indices is not None and non_angular_indices is not None
+    augmented_state_size = state_size
+    if angular:
+        augmented_state_size = infer_augmented_state_size(
+            angular_indices, non_angular_indices)
 
     class BNNDynamicsModel(DynamicsModel):
 
         """Bayesian neural network dynamics model."""
 
-        def __init__(self, reg_scale=1e-2, n_particles=10):
+        def __init__(self, n_particles=10):
             """Constructs a BNNDynamicsModel.
 
             Args:
-                reg_scale (float): Regularization scale.
                 n_particles (int): Number of particles.
             """
             super(BNNDynamicsModel, self).__init__()
-            self.model = bayesian_model(state_size + action_size,
+
+            self.model = bayesian_model(augmented_state_size + action_size,
                                         2 * state_size, hidden_features,
                                         **kwargs)
-            self.reg_scale = reg_scale
+
             self.n_particles = n_particles
+
+            # Normalization parameters.
+            self.register_buffer("X_mean", torch.tensor(0.0))
+            self.register_buffer("X_std", torch.tensor(1.0))
+            self.register_buffer("X_std_inv", torch.tensor(1.0))
+            self.register_buffer("dX_mean", torch.tensor(0.0))
+            self.register_buffer("dX_std", torch.tensor(1.0))
+            self.register_buffer("dX_std_inv", torch.tensor(1.0))
 
         @classproperty
         def action_size(cls):
@@ -74,19 +92,29 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
 
         @classproperty
         def state_size(cls):
-            """Augmented state size (int)."""
+            """State size (int)."""
             return state_size
 
         def resample(self):
             """Resamples model."""
             self.model.resample()
 
+        def _normalize_input(self, x_):
+            return (x_ - self.X_mean) * self.X_std_inv
+
+        def _scale_output(self, mean, log_std):
+            mean = mean * self.dX_std + self.dX_mean
+            log_std = log_std + self.dX_std.log()
+            return mean, log_std
+
         def fit(self,
-                dataset,
+                X_,
+                dX,
                 n_iter=500,
                 batch_size=128,
                 reg_scale=1.0,
                 resample=True,
+                normalize=True,
                 quiet=False,
                 **kwargs):
             """Fits the dynamics model.
@@ -101,26 +129,45 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 batch_size (int): Batch size of each iteration.
                 reg_scale (float): Regularization scale.
                 resample (bool): Whether to resample during training or not.
+                normalize (bool): Whether to normalize or not.
                 quiet (bool): Whether to print anything to screen or not.
             """
+            if angular:
+                X_ = augment_state(X_, angular_indices, non_angular_indices)
+
+            # Normalize.
+            if normalize:
+                self.X_mean.data = X_.mean(dim=0).detach()
+                self.X_std.data = X_.std(dim=0).detach()
+                self.X_std_inv.data = self.X_std.reciprocal()
+                self.dX_mean.data = dX.mean(dim=0).detach()
+                self.dX_std.data = dX.std(dim=0).detach()
+                self.dX_std_inv.data = self.dX_std.reciprocal()
+
+            N = X_.shape[0]
+
             params = filter(lambda p: p.requires_grad, self.parameters())
             optimizer = torch.optim.Adam(params, 1e-4, amsgrad=True)
 
-            N = len(dataset)
+            dataset = TensorDataset(X_, dX)
             dataloader = DataLoader(
                 dataset, batch_size=batch_size, shuffle=True)
             datagen = _cycle(dataloader, n_iter)
             with tqdm(datagen, total=n_iter, desc="BNN", disable=quiet) as pbar:
                 for x_, dx in pbar:
                     optimizer.zero_grad()
+
+                    x_ = self._normalize_input(x_)
                     output = self.model(x_, resample=resample)
+
                     mean, log_std = output.split(
-                        [self.state_size, self.state_size], dim=-1)
+                        [state_size, state_size], dim=-1)
+                    mean, log_std = self._scale_output(mean, log_std)
 
                     loss = -_gaussian_log_likelihood(dx, mean,
                                                      log_std.exp()).mean()
                     reg_loss = self.model.regularization() / N
-                    loss += self.reg_scale * reg_loss
+                    loss += reg_scale * reg_loss
                     pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
 
                     loss.backward()
@@ -155,25 +202,31 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                     (Tensor<..., encoded_state_size>) or next samples
                     (Tensor<n_particles, ..., state_size>).
             """
-            # Moment match.
-            # Sample manually to preserve gradients.
             mean = decode_mean(z, encoding)
             std = decode_std(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
-            if x.dim() == 3:
-                # This is required to make batched jacobians correct as the
-                # batches are in the second dimension and should share the same
-                # samples.
-                eps = torch.randn_like(x[:, 0, :])
-                eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
-            else:
-                eps = torch.randn_like(x)
 
             if moment_match:
+                if x.dim() == 3:
+                    # This is required to make batched jacobians correct as the
+                    # batches are in the second dimension and should share the same
+                    # samples.
+                    eps = torch.randn_like(x[:, 0, :])
+                    eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
+                else:
+                    eps = torch.randn_like(x)
+
                 x = x + std * eps
+
+            # Augment state.
+            if angular:
+                x = augment_state(x, angular_indices, non_angular_indices)
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
+
+            # Normalize.
+            x_ = self._normalize_input(x_)
 
             if x_.dim() == 3:
                 # Shuffle the dimensions for the proper masks to be used in
@@ -185,8 +238,9 @@ def bnn_dynamics_model_factory(state_size, action_size, hidden_features,
                 # Unshuffle the dimensions.
                 output = output.permute(1, 0, 2)
 
-            dx, log_std = output.split(
-                [self.state_size, self.state_size], dim=-1)
+            dx, log_std = output.split([state_size, state_size], dim=-1)
+            dx, log_std = self._scale_output(dx, log_std)
+
             if use_predicted_std:
                 if dx.dim() == 3:
                     # This is required to make batched jacobians correct as the

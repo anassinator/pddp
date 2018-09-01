@@ -7,7 +7,6 @@ from pddp.examples import *
 from pddp.costs import QRCost
 from pddp.utils.evaluation import *
 from pddp.utils.gaussian_variable import GaussianVariable
-from pddp.utils.angular import infer_augmented_state_size
 
 STATE_ENCODINGS = [
     StateEncoding.FULL_COVARIANCE_MATRIX,
@@ -36,8 +35,7 @@ COSTS = [
 def test_eval_cost(model_class, cost_class, encoding, terminal, approximate):
     model = model_class(0.1)
 
-    N = infer_augmented_state_size(model.angular_indices,
-                                   model.non_angular_indices)
+    N = model.state_size
     M = model.action_size
 
     z = GaussianVariable.random(N).encode(encoding)
@@ -66,9 +64,8 @@ def test_eval_cost(model_class, cost_class, encoding, terminal, approximate):
 @pytest.mark.parametrize("model_class", MODELS)
 def test_eval_dynamics(model_class, encoding):
     model = model_class(0.1)
-    augmented_state_size = infer_augmented_state_size(model.angular_indices,
-                                                      model.non_angular_indices)
-    x = GaussianVariable.random(augmented_state_size)
+
+    x = GaussianVariable.random(model.state_size)
     u = torch.randn(model.action_size, requires_grad=True)
 
     z = x.encode(encoding)

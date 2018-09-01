@@ -20,7 +20,7 @@ from torch.nn import Parameter
 from ...models.base import DynamicsModel
 from ...utils.constraint import constrain_model
 from ...utils.classproperty import classproperty
-from ...utils.encoding import StateEncoding, decode_covar, decode_mean, encode
+from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
 from ...utils.angular import augment_state, complementary_indices, reduce_state
 
 
@@ -30,7 +30,7 @@ class PendulumDynamicsModel(DynamicsModel):
     """Friction-less pendulum dynamics model.
 
     Note:
-        state: augment_state([theta, theta']) = [theta', sin(theta), cos(theta)]
+        state: [theta, theta']
         action: [torque]
         theta: 0 is pointing up and increasing counter-clockwise.
     """
@@ -57,8 +57,8 @@ class PendulumDynamicsModel(DynamicsModel):
 
     @classproperty
     def state_size(cls):
-        """Augmented state size (int)."""
-        return 3
+        """State size (int)."""
+        return 2
 
     @classproperty
     def angular_indices(cls):
@@ -102,12 +102,10 @@ class PendulumDynamicsModel(DynamicsModel):
         g = self.g
 
         mean = decode_mean(z, encoding)
-        covar = decode_covar(z, encoding)
-        state = reduce_state(mean, self.angular_indices,
-                             self.non_angular_indices)
+        var = decode_var(z, encoding)
 
-        theta = state[..., 0]
-        theta_dot = state[..., 1]
+        theta = mean[..., 0]
+        theta_dot = mean[..., 1]
         torque = u.flatten()
 
         # Define acceleration.
@@ -122,6 +120,4 @@ class PendulumDynamicsModel(DynamicsModel):
                 theta + theta_dot.view(theta.shape) * dt,
                 next_theta_dot,
             ], dim=-1)
-        mean_ = augment_state(mean, self.angular_indices,
-                              self.non_angular_indices)
-        return encode(mean_, C=covar, encoding=encoding)
+        return encode(mean, V=var, encoding=encoding)

@@ -46,7 +46,7 @@ class DynamicsModel(torch.nn.Module):
 
     @classproperty
     def state_size(cls):
-        """Augmented state size (int)."""
+        """State size (int)."""
         raise NotImplementedError
 
     def fit(self, dataset, quiet=False, **kwargs):

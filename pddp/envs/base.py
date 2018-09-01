@@ -53,7 +53,7 @@ class Env():
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_state(self, var=1e-6):
+    def get_state(self, var=1e-2):
         """Gets the current state of the environment.
 
         Args:

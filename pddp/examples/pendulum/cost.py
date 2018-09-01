@@ -19,7 +19,9 @@ import torch
 from .model import PendulumDynamicsModel
 
 from ...costs import QRCost
-from ...utils.angular import augment_state
+from ...utils.encoding import StateEncoding
+from ...utils.angular import (augment_encoded_state, augment_state,
+                              infer_augmented_state_size)
 
 
 class PendulumCost(QRCost):
@@ -34,8 +36,11 @@ class PendulumCost(QRCost):
         """
         model = PendulumDynamicsModel
 
-        Q_term = 100.0 * torch.eye(model.state_size)
-        Q = torch.zeros(model.state_size, model.state_size)
+        augmented_state_size = infer_augmented_state_size(
+            model.angular_indices, model.non_angular_indices)
+
+        Q_term = 100.0 * torch.eye(augmented_state_size)
+        Q = torch.zeros_like(Q_term)
 
         # We minimize the distance between the tip of the pendulum and the goal.
         # Don't penalize instantaneous velocities as much.
@@ -53,3 +58,32 @@ class PendulumCost(QRCost):
             model.non_angular_indices)
 
         super(PendulumCost, self).__init__(Q, R, Q_term=Q_term, x_goal=x_goal)
+
+    def forward(self,
+                z,
+                u,
+                i,
+                terminal=False,
+                encoding=StateEncoding.DEFAULT,
+                **kwargs):
+        """Cost function.
+
+        Args:
+            z (Tensor<..., encoded_state_size): Encoded state distribution.
+            u (Tensor<..., action_size>): Action vector.
+            i (Tensor<...>): Time index.
+            terminal (bool): Whether the cost is terminal. If so, u should be
+                `None`.
+            encoding (int): StateEncoding enum.
+
+        Returns:
+            The expectation of the cost (Tensor<...>).
+        """
+        model = PendulumDynamicsModel
+
+        z = augment_encoded_state(z, model.angular_indices,
+                                  model.non_angular_indices, encoding,
+                                  model.state_size)
+
+        return super(PendulumCost, self).forward(z, u, i, terminal, encoding,
+                                                 **kwargs)

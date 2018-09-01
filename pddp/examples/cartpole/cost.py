@@ -19,7 +19,9 @@ import torch
 from .model import CartpoleDynamicsModel
 
 from ...costs import QRCost
-from ...utils.angular import augment_state
+from ...utils.encoding import StateEncoding
+from ...utils.angular import (augment_encoded_state, augment_state,
+                              infer_augmented_state_size)
 
 
 class CartpoleCost(QRCost):
@@ -33,9 +35,11 @@ class CartpoleCost(QRCost):
             pole_length (float): Pole length [m].
         """
         model = CartpoleDynamicsModel
+        augmented_state_size = infer_augmented_state_size(
+            model.angular_indices, model.non_angular_indices)
 
-        Q_term = 100.0 * torch.eye(model.state_size)
-        Q = torch.zeros(model.state_size, model.state_size)
+        Q_term = 100.0 * torch.eye(augmented_state_size)
+        Q = torch.zeros_like(Q_term)
 
         # We minimize the distance between the tip of the pole and the goal.
         # Note: we are operating on the augmented state vectors here:
@@ -53,3 +57,32 @@ class CartpoleCost(QRCost):
             model.non_angular_indices)
 
         super(CartpoleCost, self).__init__(Q, R, Q_term=Q_term, x_goal=x_goal)
+
+    def forward(self,
+                z,
+                u,
+                i,
+                terminal=False,
+                encoding=StateEncoding.DEFAULT,
+                **kwargs):
+        """Cost function.
+
+        Args:
+            z (Tensor<..., encoded_state_size): Encoded state distribution.
+            u (Tensor<..., action_size>): Action vector.
+            i (Tensor<...>): Time index.
+            terminal (bool): Whether the cost is terminal. If so, u should be
+                `None`.
+            encoding (int): StateEncoding enum.
+
+        Returns:
+            The expectation of the cost (Tensor<...>).
+        """
+        model = CartpoleDynamicsModel
+
+        z = augment_encoded_state(z, model.angular_indices,
+                                  model.non_angular_indices, encoding,
+                                  model.state_size)
+
+        return super(CartpoleCost, self).forward(z, u, i, terminal, encoding,
+                                                 **kwargs)

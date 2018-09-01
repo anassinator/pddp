@@ -22,7 +22,7 @@ from ...models.base import DynamicsModel
 from ...utils.constraint import constrain_model
 from ...utils.classproperty import classproperty
 from ...utils.angular import augment_state, reduce_state
-from ...utils.encoding import StateEncoding, decode_covar, decode_mean, encode
+from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
 
 
 @constrain_model(-10.0, 10.0)
@@ -31,8 +31,7 @@ class CartpoleDynamicsModel(DynamicsModel):
     """Friction-less cartpole dynamics model.
 
     Note:
-        state: augment_state([x, x', theta, theta'])
-               = [x, x', theta', sin(theta), cos(theta)]
+        state: [x, x', theta, theta']
         action: [F]
         theta: 0 is pointing up and increasing clockwise.
     """
@@ -61,8 +60,8 @@ class CartpoleDynamicsModel(DynamicsModel):
 
     @classproperty
     def state_size(cls):
-        """Augmented state size (int)."""
-        return 5
+        """State size (int)."""
+        return 4
 
     @classproperty
     def angular_indices(cls):
@@ -107,14 +106,12 @@ class CartpoleDynamicsModel(DynamicsModel):
         g = self.g
 
         mean = decode_mean(z, encoding)
-        covar = decode_covar(z, encoding)
+        var = decode_var(z, encoding)
 
-        state = reduce_state(mean, self.angular_indices,
-                             self.non_angular_indices)
-        x = state[..., 0]
-        x_dot = state[..., 1]
-        theta = state[..., 2]
-        theta_dot = state[..., 3]
+        x = mean[..., 0]
+        x_dot = mean[..., 1]
+        theta = mean[..., 2]
+        theta_dot = mean[..., 3]
         F = u.flatten()
 
         # Define dynamics model as per Razvan V. Florian's
@@ -140,6 +137,5 @@ class CartpoleDynamicsModel(DynamicsModel):
                 theta_dot + theta_dot_dot.view(theta_dot.shape) * dt,
             ],
             dim=-1)
-        mean_ = augment_state(mean, self.angular_indices,
-                              self.non_angular_indices)
-        return encode(mean_, C=covar, encoding=encoding)
+
+        return encode(mean, V=var, encoding=encoding)
