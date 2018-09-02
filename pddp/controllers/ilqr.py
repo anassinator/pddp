@@ -160,13 +160,14 @@ class iLQRController(Controller):
                         break
 
                 pbar.set_postfix({
-                    "loss": J_opt.detach().cpu().numpy(),
+                    "loss": J_opt.detach_().cpu().numpy(),
                     "reg": self._mu,
                     "accepted": accepted,
                 })
 
                 if on_iteration:
-                    on_iteration(i, Z, U, J_opt, accepted, converged)
+                    on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
+                                 accepted, converged)
 
                 if not accepted:
                     # Increase regularization term.
@@ -239,10 +240,8 @@ def forward(z0,
 
     Z[0] = z0
     for i in range(N):
-        z = Z[i].detach()
-        u = U[i].detach()
-        z.requires_grad_()
-        u.requires_grad_()
+        z = Z[i].detach().requires_grad_()
+        u = U[i].detach().requires_grad_()
 
         L[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i] = eval_cost(
             cost, z, u, i, encoding=encoding, **cost_opts)
@@ -251,8 +250,7 @@ def forward(z0,
             model, z, u, i, encoding=encoding, **model_opts)
 
     # Terminal cost.
-    z = Z[-1].detach()
-    z.requires_grad_()
+    z = Z[-1].detach().requires_grad_()
     L[-1], L_z[-1], _, L_zz[-1], _, _ = eval_cost(
         cost, z, None, i, terminal=True, encoding=encoding, **cost_opts)
 

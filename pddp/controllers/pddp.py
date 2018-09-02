@@ -202,13 +202,14 @@ class PDDPController(iLQRController):
                             break
 
                     pbar.set_postfix({
-                        "loss": J_opt.detach().cpu().numpy(),
+                        "loss": J_opt.detach_().cpu().numpy(),
                         "reg": self._mu,
                         "accepted": accepted,
                     })
 
                     if on_iteration:
-                        on_iteration(i, Z, U, J_opt, accepted, converged)
+                        on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
+                                     accepted, converged)
 
                     if not accepted:
                         # Increase regularization term.

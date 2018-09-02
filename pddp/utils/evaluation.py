@@ -59,7 +59,7 @@ def eval_cost(cost,
     """
     if approximate:
         l = cost(z, u, i, terminal=terminal, encoding=encoding, **kwargs)
-        l_z, = torch.autograd.grad(l, z, retain_graph=True)
+        l_z = torch.autograd.grad(l, z)[0].detach_()
         l_zz = l_z.view(-1, 1).mm(l_z.view(1, -1))
 
         if terminal:
@@ -67,7 +67,7 @@ def eval_cost(cost,
             l_uz = None
             l_uu = None
         else:
-            l_u, = torch.autograd.grad(l, u, retain_graph=True)
+            l_u = torch.autograd.grad(l, u)[0].detach_()
             l_uz = l_u.view(-1, 1).mm(l_z.view(1, -1))
             l_uu = l_u.view(-1, 1).mm(l_u.view(1, -1))
 
@@ -81,21 +81,20 @@ def eval_cost(cost,
 
     l_rep = cost(
         z_rep, u_rep, i, terminal=terminal, encoding=encoding, **kwargs)
-    l = l_rep[0]
+    l = l_rep[0].detach()
 
     l_z_rep, = torch.autograd.grad(
         l_rep,
         z_rep,
         torch.ones(encoded_state_size, **tensor_opts),
         create_graph=True)
-    l_z = l_z_rep[0]
+    l_z = l_z_rep[0].detach()
 
-    l_zz, = torch.autograd.grad(
+    l_zz = torch.autograd.grad(
         l_z_rep,
         z_rep,
         torch.eye(encoded_state_size, **tensor_opts),
-        allow_unused=True,
-        retain_graph=True)
+        allow_unused=True)[0].detach_()
 
     if terminal:
         l_u = None
@@ -114,7 +113,7 @@ def eval_cost(cost,
             u_rep,
             torch.ones(action_size, **tensor_opts),
             create_graph=True)
-        l_u = l_u_rep[0]
+        l_u = l_u_rep[0].detach()
 
         l_uz, = torch.autograd.grad(
             l_u_rep,
@@ -125,13 +124,14 @@ def eval_cost(cost,
 
         if l_uz is None:
             l_uz = torch.zeros(action_size, encoded_state_size, **tensor_opts)
+        else:
+            l_uz.detach_()
 
-        l_uu, = torch.autograd.grad(
+        l_uu = torch.autograd.grad(
             l_u_rep,
             u_rep,
             torch.eye(action_size, **tensor_opts),
-            allow_unused=True,
-            retain_graph=True)
+            allow_unused=True)[0].detach_()
 
     return l, l_z, l_u, l_zz, l_uz, l_uu
 
@@ -158,23 +158,23 @@ def eval_dynamics(model, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
     action_size = u.shape[-1]
     tensor_opts = {"device": z.device, "dtype": z.dtype}
 
-    z_rep = z.repeat(encoded_state_size, 1)
-    u_rep = u.repeat(encoded_state_size, 1)
+    z_rep = z.expand(encoded_state_size, -1)
+    u_rep = u.expand(encoded_state_size, -1)
     z_next_rep = model(z_rep, u_rep, i, encoding, **kwargs)
 
     # Parallelized jacobian.
-    d_dz, = torch.autograd.grad(
+    d_dz = torch.autograd.grad(
         z_next_rep,
         z_rep,
         torch.eye(encoded_state_size, **tensor_opts),
         allow_unused=True,
-        retain_graph=True)
-    d_du, = torch.autograd.grad(
+        retain_graph=True)[0].detach_()
+    d_du = torch.autograd.grad(
         z_next_rep,
         u_rep,
         torch.eye(encoded_state_size, **tensor_opts),
-        allow_unused=True,
-        retain_graph=True)
+        allow_unused=True)[0].detach_()
 
-    z_next = z_next_rep[0]
+    z_next = z_next_rep[0].detach()
+
     return z_next, d_dz, d_du
