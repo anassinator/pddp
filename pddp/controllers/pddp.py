@@ -139,6 +139,7 @@ class PDDPController(iLQRController):
         N, action_size = U.shape
 
         # Build initial dataset.
+        dataset = None
         if self._is_training and train_on_start:
             dataset, U = _train(self.env, self.model, self.cost, U,
                                 n_initial_sample_trajectories, None,
