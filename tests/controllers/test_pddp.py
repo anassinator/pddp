@@ -2,6 +2,7 @@
 
 import torch
 import pytest
+import numpy as np
 
 from pddp.examples import *
 from pddp.costs import QRCost
@@ -53,4 +54,8 @@ def test_fit(env_class, model_class, cost_class, encoding, N):
     _, U, model, cost = _setup(model_class, cost_class, encoding, N)
     controller = PDDPController(env, model, cost)
 
+    controller.eval()
     Z, U = controller.fit(U, encoding=encoding)
+
+    controller.train()
+    Z, U = controller.fit(U, encoding=encoding, max_var=np.inf)

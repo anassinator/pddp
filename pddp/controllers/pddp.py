@@ -72,13 +72,15 @@ class PDDPController(iLQRController):
             U,
             encoding=StateEncoding.DEFAULT,
             n_iterations=50,
-            tol=torch.tensor(5e-6),
+            tol=torch.tensor(1e-6),
             max_reg=1e10,
             quiet=False,
             on_iteration=None,
             linearize_dynamics=False,
-            max_var=0.05,
-            n_sample_trajectories=4,
+            max_var=0.2,
+            max_J=0.0,
+            n_sample_trajectories=1,
+            n_initial_sample_trajectories=2,
             train_on_start=True,
             concatenate_datasets=True,
             **kwargs):
@@ -104,8 +106,12 @@ class PDDPController(iLQRController):
                 computing the control law.
             max_var (Tensor<0>): Maximum variance allowed before resampling
                 trajectories.
+            max_J (Tensor<0>): Maximum cost to converge.
+                trajectories.
             n_sample_trajectories (int): Number of trajectories to sample from
                 the environment at a time.
+            n_initial_sample_trajectories (int): Number of initial trajectories
+                to sample from the environment at a time.
             train_on_start (bool): Whether to sample trajectories and train the
                 model at the start or not.
             concatenate_datasets (bool): Whether to train on all data or just
@@ -119,8 +125,12 @@ class PDDPController(iLQRController):
         U = U.detach()
         N, action_size = U.shape
 
-        # Initial data set.
-        dataset = None
+        # Build initial dataset.
+        if self._is_training and train_on_start:
+            dataset, U = _train(self._env, self._model, self._cost, U,
+                                n_initial_sample_trajectories, None,
+                                concatenate_datasets, quiet,
+                                self._training_opts, self._cost_opts)
 
         # Backtracking line search candidates 0 < alpha <= 1.
         alphas = 1.1**(-torch.arange(10.0)**2)
@@ -130,36 +140,20 @@ class PDDPController(iLQRController):
             self._mu = 1.0
             self._delta = self._delta_0
 
-            if self._is_training and train_on_start:
-                # Sample trajectories and train model.
-                Us = U.repeat(n_sample_trajectories, 1, 1)
-                Us[1:] += torch.randn_like(Us[1:])
-                dataset_ = _sample(self._env, Us, quiet)
-                if concatenate_datasets and dataset is not None:
-                    dataset += dataset_
-                else:
-                    dataset = dataset_
-                self._model.fit(dataset, quiet=quiet, **self._training_opts)
-
             # Get initial state distribution.
             z0 = self._env.get_state().encode(encoding).detach()
-            encoded_state_size = z0.shape[-1]
 
-            changed = True
             converged = False
-            train_on_start = True
 
             with trange(n_iterations, desc="PDDP", disable=quiet) as pbar:
                 for i in pbar:
                     accepted = False
 
-                    # Forward rollout only if it needs to be recomputed.
-                    if changed:
-                        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                            z0, U, self._model, self._cost, encoding,
-                            self._model_opts, self._cost_opts)
-                        J_opt = L.sum()
-                        changed = False
+                    # Forward rollout.
+                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
+                        z0, U, self._model, self._cost, encoding,
+                        self._model_opts, self._cost_opts)
+                    J_opt = L.sum()
 
                     # Backward pass.
                     k, K = backward(
@@ -191,11 +185,12 @@ class PDDPController(iLQRController):
                             # Check if converged due to small change.
                             if (J_opt - J_new).abs() / J_opt < tol:
                                 converged = True
+                            elif J_opt <= max_J:
+                                converged = True
 
                             J_opt = J_new
                             Z = Z_new
                             U = U_new
-                            changed = True
 
                             # Decrease regularization term.
                             self._delta = min(1.0, self._delta) / self._delta_0
@@ -228,29 +223,68 @@ class PDDPController(iLQRController):
 
             if not self._is_training:
                 break
-            else:
+            elif converged:
                 # Check if uncertainty is satisfactory.
                 var = decode_var(Z, encoding=encoding).max()
                 if var < max_var:
                     break
 
+            if self._is_training:
+                dataset, U = _train(self._env, self._model, self._cost, U,
+                                    n_sample_trajectories, dataset,
+                                    concatenate_datasets, quiet,
+                                    self._training_opts, self._cost_opts)
+
         return Z, U
 
 
 @torch.no_grad()
-def _sample(env, Us, quiet=False):
+def _train(env,
+           model,
+           cost,
+           U,
+           n_trajectories,
+           dataset,
+           concatenate_datasets,
+           quiet=False,
+           training_opts={},
+           cost_opts={}):
+    # Sample new trajectories.
+    Us = U.repeat(n_trajectories, 1, 1)
+    Us[1:] += torch.randn_like(Us[1:])
+    dataset_, sample_losses = _sample(env, Us, cost, quiet, cost_opts)
+
+    # Update dataset.
+    if concatenate_datasets:
+        dataset = _concat_datasets(dataset, dataset_)
+    else:
+        dataset = dataset_
+
+    # Train the model.
+    model.fit(*dataset, quiet=quiet, **training_opts)
+
+    # Pick best trajectory to continue.
+    U = Us[sample_losses.argmax()].detach()
+
+    return dataset, U
+
+
+@torch.no_grad()
+def _sample(env, Us, cost, quiet=False, cost_opts={}):
     n_sample_trajectories, N, _ = Us.shape
     N_ = n_sample_trajectories * N
 
     tensor_opts = {"dtype": Us.dtype, "device": Us.device}
-    X_ = torch.empty(N_, env.state_size + env.action_size, **tensor_opts)
+    X = torch.empty(N_, env.state_size, **tensor_opts)
+    U = torch.empty(N_, env.action_size, **tensor_opts)
     dX = torch.empty(N_, env.state_size, **tensor_opts)
+    L = torch.zeros(N_, **tensor_opts)
 
     with trange(Us.shape[0], desc="TRIALS", disable=quiet) as pbar:
         for trajectory in pbar:
-            U = Us[trajectory]
+            current_U = Us[trajectory]
             base_i = N * trajectory
-            for i, u in enumerate(U):
+            for i, u in enumerate(current_U):
                 u = u.detach()
 
                 x = env.get_state().mean()
@@ -258,9 +292,47 @@ def _sample(env, Us, quiet=False):
                 x_next = env.get_state().mean()
 
                 j = base_i + i
-                X_[j] = torch.cat([x, u], dim=-1)
+                X[j] = x
+                U[j] = u
                 dX[j] = x_next - x
+
+                L[trajectory] += cost(
+                    x,
+                    u,
+                    i,
+                    encoding=StateEncoding.IGNORE_UNCERTAINTY,
+                    **cost_opts)
+
+            L[trajectory] += cost(
+                x_next,
+                None,
+                i,
+                terminal=True,
+                encoding=StateEncoding.IGNORE_UNCERTAINTY,
+                **cost_opts)
 
             env.reset()
 
-    return TensorDataset(X_, dX)
+    X.detach_()
+    U.detach_()
+    dX.detach_()
+    L.detach_()
+
+    return (X, U, dX), L
+
+
+@torch.no_grad()
+def _concat_datasets(first, second):
+    if first is None:
+        return second
+    elif second is None:
+        return first
+
+    X, U, dX = first
+    X_, U_, dX_ = second
+
+    X = torch.cat([X, X_])
+    U = torch.cat([U, U_])
+    dX = torch.cat([dX, dX_])
+
+    return X, U, dX

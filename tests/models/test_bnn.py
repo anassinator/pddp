@@ -44,7 +44,7 @@ def test_forward(encoding):
 def test_gradcheck(encoding, dropout_class, use_predicted_std):
     model = bnn_dynamics_model_factory(
         STATE_SIZE, ACTION_SIZE, [10, 10],
-        dropout_layers=dropout_class)().double()
+        dropout_layers=dropout_class)(n_particles=10).double()
 
     X = [GaussianVariable.random(STATE_SIZE) for _ in range(N)]
     Z = torch.stack([x.encode(encoding) for x in X]).double()

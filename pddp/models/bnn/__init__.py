@@ -12,13 +12,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
-"""Cartpole example."""
+"""Bayesian neural network dynamics models."""
 
-from .env import CartpoleEnv
-from .cost import CartpoleCost
-from .model import CartpoleDynamicsModel, ConstrainedCartpoleDynamicsModel
+from .modules import (bnn_dynamics_model_factory, BDropout, CDropout,
+                      BSequential, bayesian_model)
+from .losses import gaussian_log_likelihood
 
 __all__ = [
-    "CartpoleCost", "CartpoleDynamicsModel", "CartpoleEnv",
-    "ConstrainedCartpoleDynamicsModel"
+    "BDropout", "BSequential", "CDropout", "bayesian_model",
+    "bnn_dynamics_model_factory", "gaussian_log_likelihood"
 ]

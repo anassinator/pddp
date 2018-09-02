@@ -49,15 +49,13 @@ class DynamicsModel(torch.nn.Module):
         """State size (int)."""
         raise NotImplementedError
 
-    def fit(self, dataset, quiet=False, **kwargs):
+    def fit(self, X, U, dX, quiet=False, **kwargs):
         """Fits the dynamics model.
 
         Args:
-            dataset
-                (Dataset<Tensor<N, state_size + action_size>,
-                         Tensor<N, action_size>>):
-                Dataset of state-action pair trajectory and next state
-                trajectory.
+            X (Tensor<N, state_size>): State trajectory.
+            U (Tensor<N, action_size>): Action trajectory.
+            dX (Tensor<N, state_size>): Next state trajectory.
             quiet (bool): Whether to print anything to screen or not.
         """
         raise NotImplementedError

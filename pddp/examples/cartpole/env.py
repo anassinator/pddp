@@ -92,10 +92,11 @@ class _CartPoleEnv(gym.Env):
         return [seed]
 
     def step(self, action):
-        x = torch.tensor(self.state.astype(np.float32))
+        tensor_opts = {"dtype": torch.get_default_dtype()}
+        x = self.state.astype(np.float32)
         x_next = self.model(
-            x,
-            torch.tensor(action),
+            torch.tensor(x, **tensor_opts),
+            torch.tensor(action, **tensor_opts),
             0,
             encoding=StateEncoding.IGNORE_UNCERTAINTY)
 

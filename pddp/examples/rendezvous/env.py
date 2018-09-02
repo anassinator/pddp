@@ -77,10 +77,11 @@ class _RendezvousEnv(gym.Env):
         return [seed]
 
     def step(self, action):
+        tensor_opts = {"dtype": torch.get_default_dtype()}
         x = self.state.astype(np.float32)
         x_next = self.model(
-            torch.tensor(x),
-            torch.tensor(action),
+            torch.tensor(x, **tensor_opts),
+            torch.tensor(action, **tensor_opts),
             0,
             encoding=StateEncoding.IGNORE_UNCERTAINTY)
 

@@ -70,15 +70,13 @@ class PendulumDynamicsModel(DynamicsModel):
         """Column indices of non-angular states (Tensor)."""
         return torch.tensor([1]).long()
 
-    def fit(self, dataset, quiet=False, **kwargs):
+    def fit(self, X, U, dX, quiet=False, **kwargs):
         """Fits the dynamics model.
 
         Args:
-            dataset
-                (Dataset<Tensor<N, state_size + action_size>,
-                         Tensor<N, action_size>>):
-                Dataset of state-action pair trajectory and next state
-                trajectory.
+            X (Tensor<N, state_size>): State trajectory.
+            U (Tensor<N, action_size>): Action trajectory.
+            dX (Tensor<N, state_size>): Next state trajectory.
             quiet (bool): Whether to print anything to screen or not.
         """
         # No need: this is an exact dynamics model.

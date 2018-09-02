@@ -25,7 +25,6 @@ from ...utils.angular import augment_state, reduce_state
 from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
 
 
-@constrain_model(-10.0, 10.0)
 class CartpoleDynamicsModel(DynamicsModel):
 
     """Friction-less cartpole dynamics model.
@@ -73,15 +72,13 @@ class CartpoleDynamicsModel(DynamicsModel):
         """Column indices of non-angular states (Tensor)."""
         return torch.tensor([0, 1, 3]).long()
 
-    def fit(self, dataset, quiet=False, **kwargs):
+    def fit(self, X, U, dX, quiet=False, **kwargs):
         """Fits the dynamics model.
 
         Args:
-            dataset
-                (Dataset<Tensor<N, state_size + action_size>,
-                         Tensor<N, action_size>>):
-                Dataset of state-action pair trajectory and next state
-                trajectory.
+            X (Tensor<N, state_size>): State trajectory.
+            U (Tensor<N, action_size>): Action trajectory.
+            dX (Tensor<N, state_size>): Next state trajectory.
             quiet (bool): Whether to print anything to screen or not.
         """
         # No need: this is an exact dynamics model.
@@ -139,3 +136,7 @@ class CartpoleDynamicsModel(DynamicsModel):
             dim=-1)
 
         return encode(mean, V=var, encoding=encoding)
+
+
+ConstrainedCartpoleDynamicsModel = \
+    constrain_model(-10.0, 10.0)(CartpoleDynamicsModel)

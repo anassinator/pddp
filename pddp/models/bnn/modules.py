@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
-"""Bayesian neural network dynamics models."""
+"""Bayesian neural network modules."""
 
 import torch
 import inspect
@@ -29,10 +29,12 @@ from torch.nn import Parameter
 from collections import Iterable, OrderedDict
 from torch.utils.data import DataLoader, TensorDataset
 
-from .base import DynamicsModel
-from ..utils.classproperty import classproperty
-from ..utils.encoding import StateEncoding, decode_mean, decode_std, encode
-from ..utils.angular import augment_state, reduce_state, infer_augmented_state_size
+from ..base import DynamicsModel
+from .losses import gaussian_log_likelihood
+from ...utils.classproperty import classproperty
+from ...utils.encoding import StateEncoding, decode_mean, decode_std, encode
+from ...utils.angular import (augment_encoded_state, augment_state,
+                              infer_augmented_state_size)
 
 
 def bnn_dynamics_model_factory(state_size,
@@ -63,7 +65,7 @@ def bnn_dynamics_model_factory(state_size,
 
         """Bayesian neural network dynamics model."""
 
-        def __init__(self, n_particles=10):
+        def __init__(self, n_particles=100):
             """Constructs a BNNDynamicsModel.
 
             Args:
@@ -108,11 +110,14 @@ def bnn_dynamics_model_factory(state_size,
             return mean, log_std
 
         def fit(self,
-                X_,
+                X,
+                U,
                 dX,
                 n_iter=500,
                 batch_size=128,
                 reg_scale=1.0,
+                learning_rate=1e-4,
+                likelihood=gaussian_log_likelihood,
                 resample=True,
                 normalize=True,
                 quiet=False,
@@ -120,22 +125,24 @@ def bnn_dynamics_model_factory(state_size,
             """Fits the dynamics model.
 
             Args:
-                dataset
-                    (Dataset<Tensor<N, state_size + action_size>,
-                             Tensor<N, action_size>>):
-                    Dataset of state-action pair trajectory and next state
-                    trajectory.
+                X (Tensor<N, state_size>): State trajectory.
+                U (Tensor<N, action_size>): Action trajectory.
+                dX (Tensor<N, state_size>): Next state trajectory.
                 n_iter (int): Number of iterations.
                 batch_size (int): Batch size of each iteration.
                 reg_scale (float): Regularization scale.
+                learning_rate (float): Learning rate.
+                likelihood (callable): Likelihood function.
                 resample (bool): Whether to resample during training or not.
                 normalize (bool): Whether to normalize or not.
                 quiet (bool): Whether to print anything to screen or not.
             """
             if angular:
-                X_ = augment_state(X_, angular_indices, non_angular_indices)
+                X = augment_state(X, angular_indices, non_angular_indices)
 
-            # Normalize.
+            X_ = torch.cat([X, U], dim=-1)
+            N = X_.shape[0]
+
             if normalize:
                 self.X_mean.data = X_.mean(dim=0).detach()
                 self.X_std.data = X_.std(dim=0).detach()
@@ -144,10 +151,8 @@ def bnn_dynamics_model_factory(state_size,
                 self.dX_std.data = dX.std(dim=0).detach()
                 self.dX_std_inv.data = self.dX_std.reciprocal()
 
-            N = X_.shape[0]
-
             params = filter(lambda p: p.requires_grad, self.parameters())
-            optimizer = torch.optim.Adam(params, 1e-4, amsgrad=True)
+            optimizer = torch.optim.Adam(params, learning_rate, amsgrad=True)
 
             dataset = TensorDataset(X_, dX)
             dataloader = DataLoader(
@@ -164,8 +169,7 @@ def bnn_dynamics_model_factory(state_size,
                         [state_size, state_size], dim=-1)
                     mean, log_std = self._scale_output(mean, log_std)
 
-                    loss = -_gaussian_log_likelihood(dx, mean,
-                                                     log_std.exp()).mean()
+                    loss = -likelihood(dx, mean, log_std.exp()).mean()
                     reg_loss = self.model.regularization() / N
                     loss += reg_scale * reg_loss
                     pbar.set_postfix({"loss": loss.detach().cpu().numpy()})
@@ -180,7 +184,7 @@ def bnn_dynamics_model_factory(state_size,
                     encoding=StateEncoding.DEFAULT,
                     resample=False,
                     return_samples=False,
-                    moment_match=True,
+                    sample_input_distribution=True,
                     use_predicted_std=False,
                     **kwargs):
             """Dynamics model function.
@@ -193,7 +197,8 @@ def bnn_dynamics_model_factory(state_size,
                 resample (bool): Whether to force resample.
                 return_samples (bool): Whether to return all samples instead of
                     the encoded state distribution.
-                moment_match (bool): Whether to moment match or not.
+                sample_input_distribution (bool): Whether to sample particles
+                    from the input distribution or simply use their mean.
                 use_predicted_std (bool): Whether to use the predicted standard
                     deviations in the inference or not.
 
@@ -202,11 +207,17 @@ def bnn_dynamics_model_factory(state_size,
                     (Tensor<..., encoded_state_size>) or next samples
                     (Tensor<n_particles, ..., state_size>).
             """
+            if angular:
+                original_mean = decode_mean(z, encoding)
+                z = augment_encoded_state(z, angular_indices,
+                                          non_angular_indices, encoding,
+                                          state_size)
+
             mean = decode_mean(z, encoding)
             std = decode_std(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
 
-            if moment_match:
+            if sample_input_distribution:
                 if x.dim() == 3:
                     # This is required to make batched jacobians correct as the
                     # batches are in the second dimension and should share the same
@@ -217,10 +228,6 @@ def bnn_dynamics_model_factory(state_size,
                     eps = torch.randn_like(x)
 
                 x = x + std * eps
-
-            # Augment state.
-            if angular:
-                x = augment_state(x, angular_indices, non_angular_indices)
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
@@ -253,6 +260,11 @@ def bnn_dynamics_model_factory(state_size,
 
                 dx = dx + log_std.exp() * eps
 
+            if angular:
+                # We need the original mean.
+                mean = original_mean
+                x = mean.expand(self.n_particles, *mean.shape)
+
             if return_samples:
                 return x + dx
 
@@ -280,28 +292,6 @@ def _cycle(iterable, total):
             yield x
             if i == total:
                 return
-
-
-def _gaussian_log_likelihood(targets, pred_means, pred_stds=None):
-    """Computes the gaussian log marginal likelihood.
-
-    Args:
-        targets (Tensor): Target values.
-        pred_means (Tensor): Predicted means.
-        pred_stds (Tensor): Predicted standard deviations.
-
-    Returns:
-        Gaussian log marginal likelihood (Tensor).
-    """
-    deltas = pred_means - targets
-    if pred_stds is not None:
-        lml = -((deltas / pred_stds)**2).sum(dim=-1) * 0.5 \
-              - pred_stds.log().sum(dim=-1) \
-              - np.log(2 * np.pi) * 0.5
-    else:
-        lml = -(deltas**2).sum(dim=-1) * 0.5
-
-    return lml
 
 
 class BDropout(torch.nn.Dropout):
@@ -366,11 +356,11 @@ class BDropout(torch.nn.Dropout):
             Output (Tensor).
         """
         sample_shape = x.shape[-mask_dims:]
-        if sample_shape != self.noise.shape:
+        if resample:
+            return x * torch.bernoulli(self.p.expand(x.shape))
+        elif sample_shape != self.noise.shape:
             sample = x.view(-1, *sample_shape)[0]
             self._update_noise(sample)
-        elif resample:
-            return x * torch.bernoulli(self.p.expand(x.shape))
 
         return x * self.noise
 
@@ -442,12 +432,12 @@ class CDropout(BDropout):
         """
         sample_shape = x.shape[-mask_dims:]
         noise = self.noise
-        if sample_shape != noise.shape:
+        if resample:
+            noise = torch.rand_like(x)
+        elif sample_shape != noise.shape:
             sample = x.view(-1, *sample_shape)[0]
             self._update_noise(sample)
             noise = self.noise
-        elif resample:
-            noise = torch.rand_like(x)
 
         self.p.data = self.logit_p.sigmoid()
         concrete_p = self.logit_p + noise.log() - (1 - noise).log()
