@@ -22,13 +22,24 @@ class Controller(torch.nn.Module):
 
     """Base controller."""
 
-    def train(self):
-        """Switches to training mode."""
-        raise NotImplementedError
-
     def eval(self):
-        """Switches to evaluation mode."""
-        raise NotImplementedError
+        """Sets the module in evaluation mode.
+
+        Returns:
+            self (Controller).
+        """
+        return super(Controller, self).eval()
+
+    def train(self, mode=True):
+        """Sets the module in training mode.
+
+        Args:
+            mode (bool): Mode.
+
+        Returns:
+            self (Controller).
+        """
+        return super(Controller, self).train(mode)
 
     def fit(self, z0, U, encoding=StateEncoding.DEFAULT, **kwargs):
         """Determines the optimal path to minimize the cost.

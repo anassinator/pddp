@@ -47,9 +47,9 @@ class iLQRController(Controller):
         """
         super(iLQRController, self).__init__()
 
-        self._env = env
-        self._cost = cost
-        self._model = model
+        self.env = env
+        self.cost = cost
+        self.model = model
 
         self._cost_opts = cost_opts
         self._model_opts = model_opts
@@ -59,14 +59,6 @@ class iLQRController(Controller):
         self._mu_min = 1e-6
         self._delta_0 = 2.0
         self._delta = self._delta_0
-
-    def train(self):
-        """Switches to training mode."""
-        pass
-
-    def eval(self):
-        """Switches to evaluation mode."""
-        pass
 
     def fit(self,
             U,
@@ -112,7 +104,7 @@ class iLQRController(Controller):
         self._delta = self._delta_0
 
         # Get initial state distribution.
-        z0 = self._env.get_state().encode(encoding).detach()
+        z0 = self.env.get_state().encode(encoding).detach()
         encoded_state_size = z0.shape[-1]
 
         changed = True
@@ -124,7 +116,7 @@ class iLQRController(Controller):
                 # Forward rollout only if it needs to be recomputed.
                 if changed:
                     Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                        z0, U, self._model, self._cost, encoding,
+                        z0, U, self.model, self.cost, encoding,
                         self._model_opts, self._cost_opts)
                     J_opt = L.sum()
                     changed = False
@@ -135,9 +127,9 @@ class iLQRController(Controller):
 
                 # Backtracking line search.
                 for alpha in alphas:
-                    Z_new, U_new = _control_law(self._model, Z, U, k, K, alpha,
+                    Z_new, U_new = _control_law(self.model, Z, U, k, K, alpha,
                                                 encoding, self._model_opts)
-                    J_new = _trajectory_cost(self._cost, Z_new, U_new, encoding,
+                    J_new = _trajectory_cost(self.cost, Z_new, U_new, encoding,
                                              self._cost_opts)
 
                     if J_new < J_opt:

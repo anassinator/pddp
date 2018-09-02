@@ -60,13 +60,26 @@ class PDDPController(iLQRController):
         self._training_opts = training_opts
         self._is_training = False
 
-    def train(self):
-        """Switches to training mode."""
-        self._is_training = True
-
     def eval(self):
-        """Switches to evaluation mode."""
+        """Sets the module in evaluation mode.
+
+        Returns:
+            self (Controller).
+        """
         self._is_training = False
+        return super(PDDPController, self).eval()
+
+    def train(self, mode=True):
+        """Sets the module in training mode.
+
+        Args:
+            mode (bool): Mode.
+
+        Returns:
+            self (Controller).
+        """
+        self._is_training = mode
+        return super(PDDPController, self).train(mode)
 
     def fit(self,
             U,
@@ -127,7 +140,7 @@ class PDDPController(iLQRController):
 
         # Build initial dataset.
         if self._is_training and train_on_start:
-            dataset, U = _train(self._env, self._model, self._cost, U,
+            dataset, U = _train(self.env, self.model, self.cost, U,
                                 n_initial_sample_trajectories, None,
                                 concatenate_datasets, quiet,
                                 self._training_opts, self._cost_opts)
@@ -141,7 +154,7 @@ class PDDPController(iLQRController):
             self._delta = self._delta_0
 
             # Get initial state distribution.
-            z0 = self._env.get_state().encode(encoding).detach()
+            z0 = self.env.get_state().encode(encoding).detach()
 
             converged = False
 
@@ -151,7 +164,7 @@ class PDDPController(iLQRController):
 
                     # Forward rollout.
                     Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                        z0, U, self._model, self._cost, encoding,
+                        z0, U, self.model, self.cost, encoding,
                         self._model_opts, self._cost_opts)
                     J_opt = L.sum()
 
@@ -174,11 +187,11 @@ class PDDPController(iLQRController):
                             Z_new, U_new = _linear_control_law(
                                 Z, U, F_z, F_u, k, K, alpha)
                         else:
-                            Z_new, U_new = _control_law(self._model, Z, U, k, K,
+                            Z_new, U_new = _control_law(self.model, Z, U, k, K,
                                                         alpha, encoding,
                                                         self._model_opts)
 
-                        J_new = _trajectory_cost(self._cost, Z_new, U_new,
+                        J_new = _trajectory_cost(self.cost, Z_new, U_new,
                                                  encoding, self._cost_opts)
 
                         if J_new < J_opt:
@@ -231,7 +244,7 @@ class PDDPController(iLQRController):
                     break
 
             if self._is_training:
-                dataset, U = _train(self._env, self._model, self._cost, U,
+                dataset, U = _train(self.env, self.model, self.cost, U,
                                     n_sample_trajectories, dataset,
                                     concatenate_datasets, quiet,
                                     self._training_opts, self._cost_opts)

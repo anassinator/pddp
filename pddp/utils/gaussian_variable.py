@@ -218,7 +218,6 @@ class GaussianVariable(object):
         Returns:
             GaussianVariable.
         """
-        other = self.clone()
         other._mean = other._mean.to(*args, **kwargs)
         if other._covar is not None:
             other._covar = other._covar.to(*args, **kwargs)
@@ -251,6 +250,10 @@ class GaussianVariable(object):
     def float(self):
         """Equivalent to `self.to(torch.float32)`."""
         return self.to(torch.float32)
+
+    def half(self):
+        """Equivalent to `self.to(torch.float16)`."""
+        return self.to(torch.float16)
 
     @classmethod
     def random(cls, n, reg=1e-1, requires_grad=True):
