@@ -59,6 +59,31 @@ def test_eval_cost(model_class, cost_class, encoding, terminal, approximate):
         assert l_uz.shape == (u.shape[0], z.shape[0])
         assert l_uu.shape == (u.shape[0], u.shape[0])
 
+    (batch_l, batch_l_z, batch_l_u,
+     batch_l_zz, batch_l_uz, batch_l_uu) = batch_eval_cost(
+         cost, z, u, 0, terminal, encoding, approximate)
+
+    assert batch_l.shape == torch.Size([])
+    assert batch_l_z.shape == z.shape
+    assert batch_l_zz.shape == (z.shape[0], z.shape[0])
+
+    assert batch_l.allclose(l, 1e-3, 1e-3)
+    assert batch_l_z.allclose(l_z, 1e-3, 1e-3)
+    assert batch_l_zz.allclose(l_zz, 1e-3, 1e-3)
+
+    if terminal:
+        assert batch_l_u is None
+        assert batch_l_uz is None
+        assert batch_l_uu is None
+    else:
+        assert batch_l_u.shape == u.shape
+        assert batch_l_uz.shape == (u.shape[0], z.shape[0])
+        assert batch_l_uu.shape == (u.shape[0], u.shape[0])
+
+        assert batch_l_u.allclose(l_u, 1e-3, 1e-3)
+        assert batch_l_uz.allclose(l_uz, 1e-3, 1e-3)
+        assert batch_l_uu.allclose(l_uu, 1e-3, 1e-3)
+
 
 @pytest.mark.parametrize("encoding", STATE_ENCODINGS)
 @pytest.mark.parametrize("model_class", MODELS)
@@ -74,3 +99,14 @@ def test_eval_dynamics(model_class, encoding):
     assert z_next.shape == z.shape
     assert d_dz.shape == (z.shape[0], z.shape[0])
     assert d_du.shape == (z.shape[0], u.shape[0])
+
+    batch_z_next, batch_d_dz, batch_d_du = batch_eval_dynamics(
+        model, z, u, 0, encoding)
+
+    assert batch_z_next.shape == z.shape
+    assert batch_d_dz.shape == (z.shape[0], z.shape[0])
+    assert batch_d_du.shape == (z.shape[0], u.shape[0])
+
+    assert batch_z_next.allclose(z_next, 1e-3, 1e-3)
+    assert batch_d_dz.allclose(d_dz, 1e-3, 1e-3)
+    assert batch_d_du.allclose(d_du, 1e-3, 1e-3)

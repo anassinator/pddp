@@ -26,7 +26,8 @@ from torch.utils.data import TensorDataset
 
 from .base import Controller
 from ..utils.encoding import StateEncoding, decode_var
-from ..utils.evaluation import eval_cost, eval_dynamics
+from ..utils.evaluation import (batch_eval_cost, batch_eval_dynamics, eval_cost,
+                                eval_dynamics)
 
 
 class iLQRController(Controller):
@@ -64,8 +65,9 @@ class iLQRController(Controller):
             U,
             encoding=StateEncoding.DEFAULT,
             n_iterations=50,
-            tol=torch.tensor(5e-6),
+            tol=5e-6,
             max_reg=1e10,
+            batch_rollout=True,
             quiet=False,
             on_iteration=None,
             **kwargs):
@@ -77,6 +79,7 @@ class iLQRController(Controller):
             n_iterations (int): Maximum number of iterations until convergence.
             tol (Tensor<0>): Tolerance for early convergence.
             max_reg (Tensor<0>): Maximum regularization term.
+            batch_rollout (bool): Whether to rollout in parallel or not.
             quiet (bool): Whether to print anything to screen or not.
             on_iteration (callable): Function with the following signature:
                 Args:
@@ -116,7 +119,7 @@ class iLQRController(Controller):
                 # Forward rollout only if it needs to be recomputed.
                 if changed:
                     Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                        z0, U, self.model, self.cost, encoding,
+                        z0, U, self.model, self.cost, encoding, batch_rollout,
                         self._model_opts, self._cost_opts)
                     J_opt = L.sum()
                     changed = False
@@ -180,6 +183,7 @@ def forward(z0,
             model,
             cost,
             encoding=StateEncoding.DEFAULT,
+            batch_rollout=True,
             model_opts={},
             cost_opts={}):
     """Evaluates the forward rollout.
@@ -190,6 +194,7 @@ def forward(z0,
         model (DynamicsModel): Dynamics model.
         cost (Cost): Cost function.
         encoding (int): StateEncoding enum.
+        batch_rollout (bool): Whether to rollout in parallel or not.
         model_opts (dict): Additional key-word arguments to pass to `model()`.
         cost_opts (dict): Additional key-word arguments to pass to `cost()`.
 
@@ -216,6 +221,9 @@ def forward(z0,
     cost.eval()
     model.eval()
 
+    eval_cost_fn = batch_eval_cost if batch_rollout else eval_cost
+    eval_dynamics_fn = batch_eval_dynamics if batch_rollout else eval_dynamics
+
     N, action_size = U.shape
     encoded_state_size = z0.shape[-1]
     tensor_opts = {"dtype": z0.dtype, "device": z0.device}
@@ -237,10 +245,10 @@ def forward(z0,
         z = Z[i].detach().requires_grad_()
         u = U[i].detach().requires_grad_()
 
-        L[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i] = eval_cost(
+        L[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i] = eval_cost_fn(
             cost, z, u, i, encoding=encoding, **cost_opts)
 
-        Z[i + 1], F_z[i], F_u[i] = eval_dynamics(
+        Z[i + 1], F_z[i], F_u[i] = eval_dynamics_fn(
             model, z, u, i, encoding=encoding, **model_opts)
 
     # Terminal cost.

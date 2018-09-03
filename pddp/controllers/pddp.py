@@ -63,8 +63,9 @@ class PDDPController(iLQRController):
             U,
             encoding=StateEncoding.DEFAULT,
             n_iterations=50,
-            tol=torch.tensor(1e-6),
+            tol=5e-6,
             max_reg=1e10,
+            batch_rollout=True,
             quiet=False,
             on_iteration=None,
             linearize_dynamics=False,
@@ -83,6 +84,7 @@ class PDDPController(iLQRController):
             n_iterations (int): Maximum number of iterations until convergence.
             tol (Tensor<0>): Tolerance for early convergence.
             max_reg (Tensor<0>): Maximum regularization term.
+            batch_rollout (bool): Whether to rollout in parallel or not.
             quiet (bool): Whether to print anything to screen or not.
             on_iteration (callable): Function with the following signature:
                 Args:
@@ -143,7 +145,7 @@ class PDDPController(iLQRController):
 
                     # Forward rollout.
                     Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                        z0, U, self.model, self.cost, encoding,
+                        z0, U, self.model, self.cost, encoding, batch_rollout,
                         self._model_opts, self._cost_opts)
                     J_opt = L.sum()
 
@@ -175,7 +177,7 @@ class PDDPController(iLQRController):
 
                         if J_new < J_opt:
                             # Check if converged due to small change.
-                            if (J_opt - J_new).abs() / J_opt < tol:
+                            if (J_opt - J_new).abs() / J_opt <= tol:
                                 converged = True
                             elif J_opt <= max_J:
                                 converged = True

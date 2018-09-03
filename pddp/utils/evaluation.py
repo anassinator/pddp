@@ -15,6 +15,7 @@
 """Dynamics model and cost evaluation utilities."""
 
 import torch
+from .autodiff import jacobian
 from .encoding import StateEncoding
 from .gaussian_variable import GaussianVariable
 
@@ -28,6 +29,117 @@ def eval_cost(cost,
               approximate=False,
               **kwargs):
     """Evaluates the cost function and its first-order derivatives.
+
+    Args:
+        cost (Cost): Cost function.
+        z (Tensor<encoded_state_size>): Encoded state vector.
+        u (Tensor<action_size>): Action vector.
+        i (int): Time index.
+        terminal (bool): Whether the cost is terminal. If so, `u` should be
+            `None`.
+        encoding (int): StateEncoding enum.
+        approximate (bool): Whether to approximate the Hessians or not.
+        **kwargs: Additional key-word arguments to pass to `cost()`.
+
+    Returns:
+        Tuple of:
+            Cost expectation (Tensor<0>).
+            Partial derivative of the cost w.r.t. z
+                (Tensor<encoded_state_size>).
+            Partial derivative of the cost w.r.t. u (Tensor<action_size>).
+            First-order derivative of the cost w.r.t. z
+                (Tensor<encoded_state_size, encoded_state_size>).
+            First-order derivative of the cost w.r.t. u
+                (Tensor<encoded_state_size, action_size>).
+            Second-order derivative of the cost w.r.t. z, z
+                (Tensor<encoded_state_size, encoded_state_size>).
+            Second-order derivative of the cost w.r.t. u, z
+                (Tensor<action_size, encoded_state_size>).
+            Second-order derivative of the cost w.r.t. u, u
+                (Tensor<action_size, action_size>).
+    """
+    encoded_state_size = z.shape[-1]
+    action_size = u.shape[-1] if not terminal else 0
+    zu = torch.cat([z, u], -1) if not terminal else z
+
+    l = cost(
+        zu[:encoded_state_size],
+        zu[encoded_state_size:],
+        i,
+        terminal=terminal,
+        encoding=encoding,
+        **kwargs)
+    l_zu, = torch.autograd.grad(l, zu, create_graph=not approximate)
+    l_z = l_zu[:encoded_state_size].detach()
+    l_u = l_zu[encoded_state_size:].detach()
+
+    if approximate:
+        l_zz = l_z.view(-1, 1).mm(l_z.view(1, -1))
+
+        if not terminal:
+            l_uz = l_u.view(-1, 1).mm(l_z.view(1, -1))
+            l_uu = l_u.view(-1, 1).mm(l_u.view(1, -1))
+
+    else:
+        l_zuzu = jacobian(l_zu, zu)
+        l_zz = l_zuzu[:encoded_state_size, :encoded_state_size].detach()
+        l_uz = l_zuzu[encoded_state_size:, :encoded_state_size].detach()
+        l_uu = l_zuzu[encoded_state_size:, encoded_state_size:].detach()
+
+    if terminal:
+        l_u = None
+        l_uz = None
+        l_uu = None
+
+    cost.zero_grad()
+
+    return l, l_z, l_u, l_zz, l_uz, l_uu
+
+
+def eval_dynamics(model, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
+    """Evaluates the dynamics model and its first-order derivatives.
+
+    Args:
+        model (DynamicsModel): Dynamics model.
+        z (Tensor<encoded_state_size>): Encoded state vector.
+        u (Tensor<action_size>): Action vector.
+        i (int): Time index.
+        **kwargs: Additional key-word arguments to pass to `model()`.
+
+    Returns:
+        Tuple of:
+            Encoded next state vector (Tensor<encoded_state_size>).
+            Jacobian of the model w.r.t. z
+                (Tensor<encoded_state_size, encoded_state_size>).
+            Jacobian of the model w.r.t. u
+                (Tensor<encoded_state_size, action_size>).
+    """
+    encoded_state_size = z.shape[-1]
+
+    zu = torch.cat([z, u], -1)
+    z_next = model(zu[:encoded_state_size], zu[encoded_state_size:], i,
+                   encoding, **kwargs)
+
+    d_dzu = jacobian(z_next, zu)
+
+    z_next = z_next.detach()
+    d_dz = d_dzu[:, :encoded_state_size].detach()
+    d_du = d_dzu[:, encoded_state_size:].detach()
+
+    model.zero_grad()
+
+    return z_next, d_dz, d_du
+
+
+def batch_eval_cost(cost,
+                    z,
+                    u,
+                    i,
+                    terminal=False,
+                    encoding=StateEncoding.DEFAULT,
+                    approximate=False,
+                    **kwargs):
+    """Evaluates the cost function and its first-order derivatives in parallel.
 
     Args:
         cost (Cost): Cost function.
@@ -124,8 +236,13 @@ def eval_cost(cost,
     return l, l_z, l_u, l_zz, l_uz, l_uu
 
 
-def eval_dynamics(model, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
-    """Evaluates the dynamics model and its first-order derivatives.
+def batch_eval_dynamics(model,
+                        z,
+                        u,
+                        i,
+                        encoding=StateEncoding.DEFAULT,
+                        **kwargs):
+    """Evaluates the dynamics model and its first-order derivatives in parallel.
 
     Args:
         model (DynamicsModel): Dynamics model.
