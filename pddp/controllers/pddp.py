@@ -273,7 +273,7 @@ def _sample(env, Us, cost, quiet=False, cost_opts={}):
     X = torch.empty(N_, env.state_size, **tensor_opts)
     U = torch.empty(N_, env.action_size, **tensor_opts)
     dX = torch.empty(N_, env.state_size, **tensor_opts)
-    L = torch.zeros(N_, **tensor_opts)
+    L = torch.zeros(n_sample_trajectories, **tensor_opts)
 
     with trange(Us.shape[0], desc="TRIALS", disable=quiet) as pbar:
         for trajectory in pbar:
