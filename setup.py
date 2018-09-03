@@ -24,13 +24,6 @@ INSTALL_REQUIRES = [
     "torch==0.4.1",
     "tqdm==4.25.*",
 ]
-DEV_REQUIRES = ["yapf==0.22.0"]
-SETUP_REQUIRES = ["pytest-runner"]
-TESTS_REQUIRES = [
-    "pytest",
-    "pytest-benchmark",
-    "pytest-xdist",
-]
 
 # Parse version information.
 # yapf: disable
@@ -51,10 +44,7 @@ setup(
     download_url="{}/tarball/{}".format(BASE_URL, version),
     packages=find_packages(),
     zip_safe=True,
-    setup_requires=SETUP_REQUIRES,
-    extras_require={"dev": DEV_REQUIRES},
     install_requires=INSTALL_REQUIRES,
-    tests_require=TESTS_REQUIRES,
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: Developers",

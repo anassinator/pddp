@@ -118,13 +118,6 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
     }
     encoded_state_size = infer_encoded_state_size(M, encoding)
 
-    if M.dim() == 1:
-        Z = torch.zeros(encoded_state_size, **tensor_opts)
-    else:
-        Z = torch.zeros(M.shape[0], encoded_state_size, **tensor_opts)
-
-    Z[..., :state_size] += M
-
     if encoding == StateEncoding.FULL_COVARIANCE_MATRIX:
         C = _C_from(C, V, S)
         if C.dim() == 2:
@@ -134,7 +127,7 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
         else:
             raise NotImplementedError("Expected a 2D or 3D tensor")
 
-        Z[..., state_size:] += C
+        other = C
     elif encoding == StateEncoding.UPPER_TRIANGULAR_CHOLESKY:
         C = _C_from(C, V, S)
 
@@ -149,18 +142,18 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
             raise NotImplementedError("Expected a 2D or 3D tensor")
 
         triu_x, triu_y = np.triu_indices(state_size)
-        Z[..., state_size:] += L[..., triu_x, triu_y]
+        other = L[..., triu_x, triu_y]
     elif encoding == StateEncoding.VARIANCE_ONLY:
-        Z[..., state_size:] += _V_from(C, V, S)
+        other = _V_from(C, V, S)
     elif encoding == StateEncoding.STANDARD_DEVIATION_ONLY:
-        Z[..., state_size:] += _S_from(C, V, S)
+        other = _S_from(C, V, S)
     elif encoding == StateEncoding.IGNORE_UNCERTAINTY:
         # Nothing to do.
-        pass
+        return M
     else:
         raise NotImplementedError("Unknown StateEncoding: {}".format(encoding))
 
-    return Z
+    return torch.cat([M, other], dim=-1)
 
 
 def decode_mean(Z, encoding=StateEncoding.DEFAULT, state_size=None):
