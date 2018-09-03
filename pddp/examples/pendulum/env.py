@@ -46,8 +46,7 @@ class PendulumEnv(GymEnv):
         if model is None:
             model = PendulumDynamicsModel(dt)
 
-        self._model = model
-        gym_env = _PendulumEnv(model)
+        gym_env = _PendulumEnv(model.eval())
         super(PendulumEnv, self).__init__(gym_env, render=render)
 
 

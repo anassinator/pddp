@@ -34,7 +34,7 @@ from .losses import gaussian_log_likelihood
 from ...utils.classproperty import classproperty
 from ...utils.encoding import StateEncoding, decode_mean, decode_std, encode
 from ...utils.angular import (augment_encoded_state, augment_state,
-                              infer_augmented_state_size)
+                              infer_augmented_state_size, reduce_state)
 
 
 def bnn_dynamics_model_factory(state_size,
@@ -261,11 +261,12 @@ def bnn_dynamics_model_factory(state_size,
                 dx = dx + log_std.exp() * eps
 
             if angular:
-                # We need the original mean.
+                # We need the reduced state.
                 mean = original_mean
-                x = mean.expand(self.n_particles, *mean.shape)
 
             if return_samples:
+                if angular:
+                    x = reduce_state(x, angular_indices, non_angular_indices)
                 return x + dx
 
             M = mean + dx.mean(dim=0)
@@ -362,7 +363,9 @@ class BDropout(torch.nn.Dropout):
             sample = x.view(-1, *sample_shape)[0]
             self._update_noise(sample)
 
-        return x * self.noise
+        # We never need these gradients in evaluation mode.
+        noise = self.noise if self.training else self.noise.detach()
+        return x * noise
 
     def extra_repr(self):
         """Formats module representation.
@@ -442,6 +445,10 @@ class CDropout(BDropout):
         self.p.data = self.logit_p.sigmoid()
         concrete_p = self.logit_p + noise.log() - (1 - noise).log()
         concrete_noise = (concrete_p / self.temperature).sigmoid()
+
+        if not self.training:
+            # We never need these gradients in evaluation mode.
+            concrete_noise = concrete_noise.detach()
 
         return x * concrete_noise
 

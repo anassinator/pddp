@@ -45,7 +45,7 @@ class RendezvousEnv(GymEnv):
         if model is None:
             model = RendezvousDynamicsModel(dt)
 
-        gym_env = _RendezvousEnv(model)
+        gym_env = _RendezvousEnv(model.eval())
         super(RendezvousEnv, self).__init__(gym_env, render=render)
 
 

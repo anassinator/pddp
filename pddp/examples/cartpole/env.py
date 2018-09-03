@@ -46,14 +46,8 @@ class CartpoleEnv(GymEnv):
         if model is None:
             model = CartpoleDynamicsModel(dt)
 
-        self._model = model
-        gym_env = _CartPoleEnv(model)
+        gym_env = _CartPoleEnv(model.eval())
         super(CartpoleEnv, self).__init__(gym_env, render=render)
-
-    @property
-    def state_size(self):
-        """Augmented state size (int)."""
-        return self._model.state_size
 
 
 class _CartPoleEnv(gym.Env):

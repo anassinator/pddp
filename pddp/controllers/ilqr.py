@@ -213,6 +213,8 @@ def forward(z0,
                 Hessian of cost path w.r.t. action.
     """
     U.detach_()
+    cost.eval()
+    model.eval()
 
     N, action_size = U.shape
     encoded_state_size = z0.shape[-1]
@@ -375,6 +377,7 @@ def _control_law(model,
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
+    model.eval()
 
     for i in range(U.shape[0]):
         z = Z[i]
@@ -416,6 +419,7 @@ def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
 
 @torch.no_grad()
 def _trajectory_cost(cost, Z, U, encoding=StateEncoding.DEFAULT, cost_opts={}):
+    cost.eval()
     N = U.shape[0]
     I = torch.arange(N)
     L = cost(Z[:-1], U, I, terminal=False, encoding=encoding, **cost_opts)

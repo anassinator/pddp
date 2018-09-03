@@ -58,28 +58,6 @@ class PDDPController(iLQRController):
         super(PDDPController, self).__init__(env, model, cost, model_opts,
                                              cost_opts)
         self._training_opts = training_opts
-        self._is_training = False
-
-    def eval(self):
-        """Sets the module in evaluation mode.
-
-        Returns:
-            self (Controller).
-        """
-        self._is_training = False
-        return super(PDDPController, self).eval()
-
-    def train(self, mode=True):
-        """Sets the module in training mode.
-
-        Args:
-            mode (bool): Mode.
-
-        Returns:
-            self (Controller).
-        """
-        self._is_training = mode
-        return super(PDDPController, self).train(mode)
 
     def fit(self,
             U,
@@ -140,7 +118,7 @@ class PDDPController(iLQRController):
 
         # Build initial dataset.
         dataset = None
-        if self._is_training and train_on_start:
+        if self.training and train_on_start:
             dataset, U = _train(self.env, self.model, self.cost, U,
                                 n_initial_sample_trajectories, None,
                                 concatenate_datasets, quiet,
@@ -236,7 +214,7 @@ class PDDPController(iLQRController):
                     if converged:
                         break
 
-            if not self._is_training:
+            if not self.training:
                 break
             elif converged:
                 # Check if uncertainty is satisfactory.
@@ -244,7 +222,7 @@ class PDDPController(iLQRController):
                 if var < max_var:
                     break
 
-            if self._is_training:
+            if self.training:
                 dataset, U = _train(self.env, self.model, self.cost, U,
                                     n_sample_trajectories, dataset,
                                     concatenate_datasets, quiet,
@@ -264,6 +242,8 @@ def _train(env,
            quiet=False,
            training_opts={},
            cost_opts={}):
+    model.train()
+
     # Sample new trajectories.
     Us = U.repeat(n_trajectories, 1, 1)
     Us[1:] += torch.randn_like(Us[1:])

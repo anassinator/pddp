@@ -53,14 +53,17 @@ def test_gradcheck(encoding, dropout_class, use_predicted_std):
     z = Z[0]
     u = U[0]
 
-    def deterministic_model(*args):
-        # Needed for consistent gradients through finite differences.
-        torch.random.manual_seed(4)
-        return model(*args, use_predicted_std=use_predicted_std)
+    class DeterministicModel(torch.nn.Module):
+
+        def forward(self, *args):
+            # Needed for consistent gradients through finite differences.
+            torch.random.manual_seed(4)
+            return model(*args, use_predicted_std=use_predicted_std)
 
     # Force the model noise to be sampled once before the test.
     # Otherwise, the model will not be deterministic as the noise will only be
     # sampled on the first run.
+    deterministic_model = DeterministicModel()
     _ = deterministic_model(z, u, 0, encoding)
 
     assert torch.autograd.gradcheck(deterministic_model, (Z, U, 0, encoding))
