@@ -86,8 +86,8 @@ def bnn_dynamics_model_factory(state_size,
             self.register_buffer("dX_mean", torch.tensor(0.0))
             self.register_buffer("dX_std", torch.tensor(1.0))
             self.register_buffer("dX_std_inv", torch.tensor(1.0))
-            self.eps1 = []
-            self.eps2 = []
+            self.eps1 = {}
+            self.eps2 = {}
 
         @classproperty
         def action_size(cls):
@@ -101,7 +101,8 @@ def bnn_dynamics_model_factory(state_size,
 
         def resample(self):
             """Resamples model."""
-            self.eps = []
+            self.eps1 = {}
+            self.eps2 = {}
             self.model.resample()
 
         def _normalize_input(self, x_):
@@ -188,7 +189,7 @@ def bnn_dynamics_model_factory(state_size,
                     resample=False,
                     return_samples=False,
                     sample_input_distribution=True,
-                    use_predicted_std=False,
+                    use_predicted_std=True,
                     **kwargs):
             """Dynamics model function.
 
@@ -221,7 +222,7 @@ def bnn_dynamics_model_factory(state_size,
             x = mean.expand(self.n_particles, *mean.shape)
 
             if sample_input_distribution:
-                if resample or len(self.eps1) < i+1:
+                if resample or i not in self.eps1:
                     if x.dim() == 3:
                         # This is required to make batched jacobians correct as the
                         # batches are in the second dimension and should share the same
@@ -229,7 +230,7 @@ def bnn_dynamics_model_factory(state_size,
                         eps = torch.randn_like(x[:, 0, :])
                     else:
                         eps = torch.randn_like(x)
-                    self.eps1.append(eps)
+                    self.eps1[i] = eps
 
                 eps = self.eps1[i]
                 if x.dim() == 3:
@@ -256,7 +257,7 @@ def bnn_dynamics_model_factory(state_size,
             dx, log_std = self._scale_output(dx, log_std)
 
             if use_predicted_std:
-                if resample or len(self.eps1) < i+1:
+                if resample or i not in self.eps2:
                     if dx.dim() == 3:
                         # This is required to make batched jacobians correct as the
                         # batches are in the second dimension and should share the
@@ -264,7 +265,7 @@ def bnn_dynamics_model_factory(state_size,
                         eps = torch.randn_like(dx[:, 0, :])
                     else:
                         eps = torch.randn_like(dx)
-                    self.eps2.append(eps)
+                    self.eps2[i] = eps
 
                 eps = self.eps2[i]
                 if x.dim() == 3:
