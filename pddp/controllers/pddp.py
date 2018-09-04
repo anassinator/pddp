@@ -78,6 +78,7 @@ class PDDPController(iLQRController):
             n_initial_sample_trajectories=2,
             train_on_start=True,
             concatenate_datasets=True,
+            max_dataset_size=1000,
             start_from_bestU=True,
             **kwargs):
         """Determines the optimal path to minimize the cost.
@@ -119,6 +120,7 @@ class PDDPController(iLQRController):
                 model at the start or not.
             concatenate_datasets (bool): Whether to train on all data or just
                 the latest.
+            max_dataset_size (int): Maximum dataset size, None means limitless.
             start_from_bestU (bool): Whether to use the best overall trajectory
                 as a seed.
 
@@ -138,9 +140,9 @@ class PDDPController(iLQRController):
         if self.training and train_on_start:
             dataset, U, J = _train(self.env, self.model, self.cost, U,
                                    n_initial_sample_trajectories, None,
-                                   concatenate_datasets, quiet, on_trial,
-                                   total_trials, self._training_opts,
-                                   self._cost_opts)
+                                   concatenate_datasets, max_dataset_size,
+                                   quiet, on_trial, total_trials,
+                                   self._training_opts, self._cost_opts)
             total_trials += n_initial_sample_trajectories
             bestU = U
             bestJ = J
@@ -248,28 +250,30 @@ class PDDPController(iLQRController):
 
             if not self.training:
                 break
-            elif converged:
+
+            if converged:
                 # Check if uncertainty is satisfactory.
                 var = decode_var(Z, encoding=encoding).max()
                 if var < max_var:
                     break
 
-            if self.training:
-                if max_trials is not None and total_trials >= max_trials:
-                    break
+            # Check if max number of trials was reached.
+            if max_trials is not None and total_trials >= max_trials:
+                break
 
-                dataset, U, J = _train(
-                    self.env, self.model, self.cost, U, n_sample_trajectories,
-                    dataset, concatenate_datasets, quiet, on_trial,
-                    total_trials, self._training_opts, self._cost_opts)
-                total_trials += n_sample_trajectories
+            # Sample new data.
+            dataset, U, J = _train(
+                self.env, self.model, self.cost, U, n_sample_trajectories,
+                dataset, concatenate_datasets, max_dataset_size, quiet,
+                on_trial, total_trials, self._training_opts, self._cost_opts)
+            total_trials += n_sample_trajectories
 
-                if J < bestJ:
-                    bestU = U
-                    bestJ = J
+            if J < bestJ:
+                bestU = U
+                bestJ = J
 
-                if start_from_bestU:
-                    U = bestU
+            if start_from_bestU:
+                U = bestU
 
         return Z, U
 
@@ -282,6 +286,7 @@ def _train(env,
            n_trajectories,
            dataset,
            concatenate_datasets,
+           max_dataset_size=None,
            quiet=False,
            on_trial=None,
            n_trials=0,
@@ -297,7 +302,7 @@ def _train(env,
 
     # Update dataset.
     if concatenate_datasets:
-        dataset = _concat_datasets(dataset, dataset_)
+        dataset = _concat_datasets(dataset, dataset_, max_dataset_size)
     else:
         dataset = dataset_
 
@@ -368,7 +373,7 @@ def _sample(env, Us, cost, quiet=False, on_trial=None, n_trials=0,
 
 
 @torch.no_grad()
-def _concat_datasets(first, second):
+def _concat_datasets(first, second, max_dataset_size=None):
     if first is None:
         return second
     elif second is None:
@@ -380,5 +385,10 @@ def _concat_datasets(first, second):
     X = torch.cat([X, X_])
     U = torch.cat([U, U_])
     dX = torch.cat([dX, dX_])
+
+    if max_dataset_size is not None:
+        X = X[-max_dataset_size:]
+        U = U[-max_dataset_size:]
+        dX = dX[-max_dataset_size:]
 
     return X, U, dX
