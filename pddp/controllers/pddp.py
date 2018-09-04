@@ -68,6 +68,7 @@ class PDDPController(iLQRController):
             batch_rollout=True,
             quiet=False,
             on_iteration=None,
+            on_trial=None,
             linearize_dynamics=False,
             max_var=0.2,
             max_J=0.0,
@@ -96,6 +97,11 @@ class PDDPController(iLQRController):
                     J_opt (Tensor<0>): Iteration's total cost to-go.
                     accepted (bool): Whether the iteration was accepted or not.
                     converged (bool): Whether the iteration converged or not.
+            on_trial (callable): Function with the following signature:
+                Args:
+                    trial (int): Trial index.
+                    X (Tensor<N+1, state_size>): Trial's state path.
+                    U (Tensor<N, action_size>): Trial's action path.
             linearize_dynamics (bool): Whether to linearize the dynamics when
                 computing the control law.
             max_var (Tensor<0>): Maximum variance allowed before resampling
@@ -110,6 +116,8 @@ class PDDPController(iLQRController):
                 model at the start or not.
             concatenate_datasets (bool): Whether to train on all data or just
                 the latest.
+            start_from_bestU (bool): Whether to use the best overall trajectory
+                as a seed.
 
         Returns:
             Tuple of:
@@ -126,12 +134,11 @@ class PDDPController(iLQRController):
         if self.training and train_on_start:
             dataset, U, J = _train(self.env, self.model, self.cost, U,
                                    n_initial_sample_trajectories, None,
-                                   concatenate_datasets, quiet,
+                                   concatenate_datasets, quiet, on_trial,
                                    self._training_opts, self._cost_opts)
             if J < bestJ:
                 bestU = U
                 bestJ = J
-        U = bestU
 
         # Backtracking line search candidates 0 < alpha <= 1.
         alphas = 1.1**(-torch.arange(10.0)**2)
@@ -237,13 +244,14 @@ class PDDPController(iLQRController):
             if self.training:
                 dataset, U, J = _train(self.env, self.model, self.cost, U,
                                        n_sample_trajectories, dataset,
-                                       concatenate_datasets, quiet,
+                                       concatenate_datasets, quiet, on_trial,
                                        self._training_opts, self._cost_opts)
                 if J < bestJ:
                     bestU = U
                     bestJ = J
-            if start_from_bestU:
-                U = bestU
+
+                if start_from_bestU:
+                    U = bestU
 
         return Z, U
 
@@ -257,6 +265,7 @@ def _train(env,
            dataset,
            concatenate_datasets,
            quiet=False,
+           on_trial=None,
            training_opts={},
            cost_opts={}):
     model.train()
@@ -264,7 +273,7 @@ def _train(env,
     # Sample new trajectories.
     Us = U.repeat(n_trajectories, 1, 1)
     Us[1:] += torch.randn_like(Us[1:])
-    dataset_, sample_losses = _sample(env, Us, cost, quiet, cost_opts)
+    dataset_, sample_losses = _sample(env, Us, cost, quiet, on_trial, cost_opts)
 
     # Update dataset.
     if concatenate_datasets:
@@ -282,7 +291,7 @@ def _train(env,
 
 
 @torch.no_grad()
-def _sample(env, Us, cost, quiet=False, cost_opts={}):
+def _sample(env, Us, cost, quiet=False, on_trial=None, cost_opts={}):
     n_sample_trajectories, N, _ = Us.shape
     N_ = n_sample_trajectories * N
 
@@ -322,6 +331,10 @@ def _sample(env, Us, cost, quiet=False, cost_opts={}):
                 terminal=True,
                 encoding=StateEncoding.IGNORE_UNCERTAINTY,
                 **cost_opts)
+
+            if on_trial:
+                on_trial(trajectory, X[base_i:base_i + N].detach(),
+                         U[base_i:base_i + N].detach())
 
             env.reset()
 
