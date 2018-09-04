@@ -144,7 +144,7 @@ class PDDPController(iLQRController):
         alphas = 1.1**(-torch.arange(10.0)**2)
 
         while True:
-            # use different random numbers each episode
+            # Use different random numbers each episode.
             self.model.resample()
 
             # Reset regularization term.

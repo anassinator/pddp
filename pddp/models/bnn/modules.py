@@ -282,16 +282,20 @@ def bnn_dynamics_model_factory(state_size,
                 return x + dx
 
             M = mean + dx.mean(dim=0)
-            if encoding in [StateEncoding.FULL_COVARIANCE_MATRIX,
-                            StateEncoding.UPPER_TRIANGULAR_CHOLESKY]:
+            if encoding in (StateEncoding.FULL_COVARIANCE_MATRIX,
+                            StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
+                # Compute full covariance matrix when needed.
                 deltas = dx - dx.mean()
-                jitter = 1e-9*torch.eye(
+                jitter = 1e-9 * torch.eye(
                     dx.shape[-1], device=dx.device, dtype=dx.dtype)
+
                 if deltas.dim() == 3:
                     deltas = deltas.permute(1, 0, 2)
-                    C = deltas.transpose(1, 2).bmm(deltas)/dx.shape[0] + jitter
+                    C = deltas.transpose(1,
+                                         2).bmm(deltas) / dx.shape[0] + jitter
                 else:
-                    C = deltas.t().mm(deltas)/dx.shape[0] + jitter
+                    C = deltas.t().mm(deltas) / dx.shape[0] + jitter
+
                 return encode(M, C=C, encoding=encoding)
 
             S = dx.std(dim=0)

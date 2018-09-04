@@ -134,6 +134,7 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
         if C.dim() == 2:
             L = C.potrf()
         elif C.dim() == 3:
+            # TODO: Use batch Cholesky.
             L = torch.stack([c.potrf() for c in C])
         else:
             raise NotImplementedError("Expected a 2D or 3D tensor")
