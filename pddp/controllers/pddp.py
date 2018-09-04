@@ -80,6 +80,7 @@ class PDDPController(iLQRController):
             concatenate_datasets=True,
             max_dataset_size=1000,
             start_from_bestU=True,
+            resample_model=True,
             **kwargs):
         """Determines the optimal path to minimize the cost.
 
@@ -123,6 +124,7 @@ class PDDPController(iLQRController):
             max_dataset_size (int): Maximum dataset size, None means limitless.
             start_from_bestU (bool): Whether to use the best overall trajectory
                 as a seed.
+            resample_model (bool): Whether to resample the model each episode.
 
         Returns:
             Tuple of:
@@ -151,8 +153,9 @@ class PDDPController(iLQRController):
         alphas = 1.1**(-torch.arange(10.0)**2)
 
         while True:
-            # Use different random numbers each episode.
-            self.model.resample()
+            if resample_model and hasattr(self.model, "resample"):
+                # Use different random numbers each episode.
+                self.model.resample()
 
             # Reset regularization term.
             self._mu = 1.0
@@ -262,10 +265,11 @@ class PDDPController(iLQRController):
                 break
 
             # Sample new data.
-            dataset, U, J = _train(
-                self.env, self.model, self.cost, U, n_sample_trajectories,
-                dataset, concatenate_datasets, max_dataset_size, quiet,
-                on_trial, total_trials, self._training_opts, self._cost_opts)
+            dataset, U, J = _train(self.env, self.model, self.cost, U,
+                                   n_sample_trajectories, dataset,
+                                   concatenate_datasets, max_dataset_size,
+                                   quiet, on_trial, total_trials,
+                                   self._training_opts, self._cost_opts)
             total_trials += n_sample_trajectories
 
             if J < bestJ:
