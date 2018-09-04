@@ -72,6 +72,7 @@ class PDDPController(iLQRController):
             linearize_dynamics=False,
             max_var=0.2,
             max_J=0.0,
+            max_trials=None,
             n_sample_trajectories=1,
             n_initial_sample_trajectories=2,
             train_on_start=True,
@@ -108,6 +109,7 @@ class PDDPController(iLQRController):
                 trajectories.
             max_J (Tensor<0>): Maximum cost to converge.
                 trajectories.
+            max_trials (int): Maximum number of trials to run.
             n_sample_trajectories (int): Number of trajectories to sample from
                 the environment at a time.
             n_initial_sample_trajectories (int): Number of initial trajectories
@@ -131,11 +133,14 @@ class PDDPController(iLQRController):
 
         # Build initial dataset.
         dataset = None
+        total_trials = 0
         if self.training and train_on_start:
             dataset, U, J = _train(self.env, self.model, self.cost, U,
                                    n_initial_sample_trajectories, None,
                                    concatenate_datasets, quiet, on_trial,
                                    self._training_opts, self._cost_opts)
+            total_trials += n_initial_sample_trajectories
+
             if J < bestJ:
                 bestU = U
                 bestJ = J
@@ -246,10 +251,15 @@ class PDDPController(iLQRController):
                     break
 
             if self.training:
+                if max_trials is not None and total_trials >= max_trials:
+                    break
+
                 dataset, U, J = _train(self.env, self.model, self.cost, U,
                                        n_sample_trajectories, dataset,
                                        concatenate_datasets, quiet, on_trial,
                                        self._training_opts, self._cost_opts)
+                total_trials += n_sample_trajectories
+
                 if J < bestJ:
                     bestU = U
                     bestJ = J
