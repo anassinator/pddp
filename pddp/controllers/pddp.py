@@ -154,6 +154,7 @@ class PDDPController(iLQRController):
             # Get initial state distribution.
             z0 = self.env.get_state().encode(encoding).detach()
 
+            changed = True
             converged = False
 
             with trange(n_iterations, desc="PDDP", disable=quiet) as pbar:
@@ -161,10 +162,12 @@ class PDDPController(iLQRController):
                     accepted = False
 
                     # Forward rollout.
-                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                        z0, U, self.model, self.cost, encoding, batch_rollout,
-                        self._model_opts, self._cost_opts)
-                    J_opt = L.sum()
+                    if changed:
+                        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
+                            z0, U, self.model, self.cost, encoding,
+                            batch_rollout, self._model_opts, self._cost_opts)
+                        J_opt = L.sum()
+                        changed = False
 
                     # Backward pass.
                     k, K = backward(
@@ -202,6 +205,7 @@ class PDDPController(iLQRController):
                             J_opt = J_new
                             Z = Z_new
                             U = U_new
+                            changed = True
 
                             # Decrease regularization term.
                             self._delta = min(1.0, self._delta) / self._delta_0
