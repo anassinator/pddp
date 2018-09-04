@@ -147,7 +147,6 @@ if __name__ == "__main__":
         Z_[i + 1] = env.get_state().encode(ENCODING)
         time.sleep(DT)
 
-
     # Wait for user interaction to close everything.
     _ = input("Press ENTER to exit")
 
