@@ -77,7 +77,7 @@ class PDDPController(iLQRController):
             n_initial_sample_trajectories=2,
             train_on_start=True,
             concatenate_datasets=True,
-            start_from_bestU=False,
+            start_from_bestU=True,
             **kwargs):
         """Determines the optimal path to minimize the cost.
 
@@ -222,11 +222,15 @@ class PDDPController(iLQRController):
                             accepted = True
                             break
 
-                    pbar.set_postfix({
+                    info = {
                         "loss": J_opt.detach_().cpu().numpy(),
                         "reg": self._mu,
                         "accepted": accepted,
-                    })
+                    }
+                    if self.training:
+                        var = decode_var(Z, encoding=encoding).max()
+                        info["var"] = var.detach().numpy()
+                    pbar.set_postfix(info)
 
                     if on_iteration:
                         on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
