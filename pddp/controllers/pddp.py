@@ -130,6 +130,9 @@ class PDDPController(iLQRController):
         alphas = 1.1**(-torch.arange(10.0)**2)
 
         while True:
+            # use different random numbers each episode
+            self.model.resample()
+
             # Reset regularization term.
             self._mu = 1.0
             self._delta = self._delta_0
@@ -138,7 +141,6 @@ class PDDPController(iLQRController):
             z0 = self.env.get_state().encode(encoding).detach()
 
             converged = False
-
             with trange(n_iterations, desc="PDDP", disable=quiet) as pbar:
                 for i in pbar:
                     accepted = False
