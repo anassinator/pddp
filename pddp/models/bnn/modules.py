@@ -86,6 +86,8 @@ def bnn_dynamics_model_factory(state_size,
             self.register_buffer("dX_mean", torch.tensor(0.0))
             self.register_buffer("dX_std", torch.tensor(1.0))
             self.register_buffer("dX_std_inv", torch.tensor(1.0))
+            self.eps1 = []
+            self.eps2 = []
 
         @classproperty
         def action_size(cls):
@@ -99,6 +101,7 @@ def bnn_dynamics_model_factory(state_size,
 
         def resample(self):
             """Resamples model."""
+            self.eps = []
             self.model.resample()
 
         def _normalize_input(self, x_):
@@ -218,15 +221,19 @@ def bnn_dynamics_model_factory(state_size,
             x = mean.expand(self.n_particles, *mean.shape)
 
             if sample_input_distribution:
-                if x.dim() == 3:
-                    # This is required to make batched jacobians correct as the
-                    # batches are in the second dimension and should share the same
-                    # samples.
-                    eps = torch.randn_like(x[:, 0, :])
-                    eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
-                else:
-                    eps = torch.randn_like(x)
+                if resample or len(self.eps1) < i+1:
+                    if x.dim() == 3:
+                        # This is required to make batched jacobians correct as the
+                        # batches are in the second dimension and should share the same
+                        # samples.
+                        eps = torch.randn_like(x[:, 0, :])
+                    else:
+                        eps = torch.randn_like(x)
+                    self.eps1.append(eps)
 
+                eps = self.eps1[i]
+                if x.dim() == 3:
+                    eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
                 x = x + std * eps
 
             u_ = u.expand(self.n_particles, *u.shape)
@@ -249,15 +256,19 @@ def bnn_dynamics_model_factory(state_size,
             dx, log_std = self._scale_output(dx, log_std)
 
             if use_predicted_std:
-                if dx.dim() == 3:
-                    # This is required to make batched jacobians correct as the
-                    # batches are in the second dimension and should share the
-                    # same samples.
-                    eps = torch.randn_like(dx[:, 0, :])
-                    eps = eps.unsqueeze(1).repeat(1, dx.shape[1], 1)
-                else:
-                    eps = torch.randn_like(dx)
+                if resample or len(self.eps1) < i+1:
+                    if dx.dim() == 3:
+                        # This is required to make batched jacobians correct as the
+                        # batches are in the second dimension and should share the
+                        # same samples.
+                        eps = torch.randn_like(dx[:, 0, :])
+                    else:
+                        eps = torch.randn_like(dx)
+                    self.eps2.append(eps)
 
+                eps = self.eps2[i]
+                if x.dim() == 3:
+                    eps = eps.unsqueeze(1).repeat(1, dx.shape[1], 1)
                 dx = dx + log_std.exp() * eps
 
             if angular:
@@ -518,7 +529,7 @@ def bayesian_model(in_features,
                        torch.nn.init.xavier_normal_,
                        gain=torch.nn.init.calculate_gain("relu")),
                    bias_initializer=partial(
-                       torch.nn.init.uniform_, a=-1.0, b=1.0),
+                       torch.nn.init.uniform_, a=-0.1, b=0.1),
                    initial_p=0.5,
                    dropout_layers=CDropout,
                    input_dropout=None):
