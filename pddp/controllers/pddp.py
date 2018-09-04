@@ -75,6 +75,7 @@ class PDDPController(iLQRController):
             n_initial_sample_trajectories=2,
             train_on_start=True,
             concatenate_datasets=True,
+            start_from_bestU=False,
             **kwargs):
         """Determines the optimal path to minimize the cost.
 
@@ -241,7 +242,8 @@ class PDDPController(iLQRController):
                 if J < bestJ:
                     bestU = U
                     bestJ = J
-            U = bestU
+            if start_from_bestU:
+                U = bestU
 
         return Z, U
 
