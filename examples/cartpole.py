@@ -139,7 +139,7 @@ if __name__ == "__main__":
 
     if RENDER:
         # Wait for user interaction before trial.
-        _ = six.input("Press ENTER to run")
+        _ = six.moves.input("Press ENTER to run")
 
     Z_ = torch.empty_like(Z)
     Z_[0] = env.get_state().encode(ENCODING)
@@ -149,6 +149,6 @@ if __name__ == "__main__":
         time.sleep(DT)
 
     # Wait for user interaction to close everything.
-    _ = six.input("Press ENTER to exit")
+    _ = six.moves.input("Press ENTER to exit")
 
     env.close()
