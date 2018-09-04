@@ -138,7 +138,8 @@ class PDDPController(iLQRController):
             dataset, U, J = _train(self.env, self.model, self.cost, U,
                                    n_initial_sample_trajectories, None,
                                    concatenate_datasets, quiet, on_trial,
-                                   self._training_opts, self._cost_opts)
+                                   total_trials, self._training_opts,
+                                   self._cost_opts)
             total_trials += n_initial_sample_trajectories
 
             if J < bestJ:
@@ -254,10 +255,10 @@ class PDDPController(iLQRController):
                 if max_trials is not None and total_trials >= max_trials:
                     break
 
-                dataset, U, J = _train(self.env, self.model, self.cost, U,
-                                       n_sample_trajectories, dataset,
-                                       concatenate_datasets, quiet, on_trial,
-                                       self._training_opts, self._cost_opts)
+                dataset, U, J = _train(
+                    self.env, self.model, self.cost, U, n_sample_trajectories,
+                    dataset, concatenate_datasets, quiet, on_trial,
+                    total_trials, self._training_opts, self._cost_opts)
                 total_trials += n_sample_trajectories
 
                 if J < bestJ:
@@ -280,6 +281,7 @@ def _train(env,
            concatenate_datasets,
            quiet=False,
            on_trial=None,
+           n_trials=0,
            training_opts={},
            cost_opts={}):
     model.train()
@@ -287,7 +289,8 @@ def _train(env,
     # Sample new trajectories.
     Us = U.repeat(n_trajectories, 1, 1)
     Us[1:] += torch.randn_like(Us[1:])
-    dataset_, sample_losses = _sample(env, Us, cost, quiet, on_trial, cost_opts)
+    dataset_, sample_losses = _sample(env, Us, cost, quiet, on_trial, n_trials,
+                                      cost_opts)
 
     # Update dataset.
     if concatenate_datasets:
@@ -305,7 +308,8 @@ def _train(env,
 
 
 @torch.no_grad()
-def _sample(env, Us, cost, quiet=False, on_trial=None, cost_opts={}):
+def _sample(env, Us, cost, quiet=False, on_trial=None, n_trials=0,
+            cost_opts={}):
     n_sample_trajectories, N, _ = Us.shape
     N_ = n_sample_trajectories * N
 
@@ -347,7 +351,7 @@ def _sample(env, Us, cost, quiet=False, on_trial=None, cost_opts={}):
                 **cost_opts)
 
             if on_trial:
-                on_trial(trajectory, X[base_i:base_i + N].detach(),
+                on_trial(n_trials + trajectory, X[base_i:base_i + N].detach(),
                          U[base_i:base_i + N].detach())
 
             env.reset()
