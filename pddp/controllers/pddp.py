@@ -117,7 +117,7 @@ class PDDPController(iLQRController):
         """
         U = U.detach()
         bestU = U
-        bestJ = 0
+        bestJ = 1e30
         N, action_size = U.shape
 
         # Build initial dataset.
@@ -127,8 +127,9 @@ class PDDPController(iLQRController):
                                    n_initial_sample_trajectories, None,
                                    concatenate_datasets, quiet,
                                    self._training_opts, self._cost_opts)
-            if bestU is None or J < bestJ:
+            if J < bestJ:
                 bestU = U
+                bestJ = J
         U = bestU
 
         # Backtracking line search candidates 0 < alpha <= 1.
@@ -237,9 +238,9 @@ class PDDPController(iLQRController):
                                        n_sample_trajectories, dataset,
                                        concatenate_datasets, quiet,
                                        self._training_opts, self._cost_opts)
-
-                if bestU is None or J < bestJ:
+                if J < bestJ:
                     bestU = U
+                    bestJ = J
             U = bestU
 
         return Z, U
