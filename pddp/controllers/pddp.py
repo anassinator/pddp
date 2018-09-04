@@ -16,6 +16,7 @@
 
 import torch
 import warnings
+import numpy as np
 
 with warnings.catch_warnings():
     # Ignore potential warning when in Jupyter environment.
