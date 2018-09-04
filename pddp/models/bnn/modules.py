@@ -32,7 +32,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from ..base import DynamicsModel
 from .losses import gaussian_log_likelihood
 from ...utils.classproperty import classproperty
-from ...utils.encoding import StateEncoding, decode_mean, decode_std, encode
+from ...utils.encoding import StateEncoding, decode_mean, decode_std, decode_covar, encode
 from ...utils.angular import (augment_encoded_state, augment_state,
                               infer_augmented_state_size, reduce_state)
 
@@ -218,7 +218,7 @@ def bnn_dynamics_model_factory(state_size,
                                           state_size)
 
             mean = decode_mean(z, encoding)
-            std = decode_std(z, encoding)
+            C = decode_covar(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
 
             if sample_input_distribution:
@@ -235,7 +235,12 @@ def bnn_dynamics_model_factory(state_size,
                 eps = self.eps1[i]
                 if x.dim() == 3:
                     eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
-                x = x + std * eps
+                    # TODO: Use batch Cholesky.
+                    L = torch.stack([c.potrf() for c in C])
+                    x = x + (eps[:, :, :, None]*L[None, :, :, :]).sum(-2)
+                else:
+                    L = C.potrf()
+                    x = x + eps.mm(L)
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
@@ -286,18 +291,27 @@ def bnn_dynamics_model_factory(state_size,
             if encoding in (StateEncoding.FULL_COVARIANCE_MATRIX,
                             StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
                 # Compute full covariance matrix when needed.
-                deltas = dx - dx.mean()
-                jitter = 1e-9 * torch.eye(
-                    dx.shape[-1], device=dx.device, dtype=dx.dtype)
-
-                if deltas.dim() == 3:
-                    deltas = deltas.permute(1, 0, 2)
-                    C = deltas.transpose(1,
-                                         2).bmm(deltas) / dx.shape[0] + jitter
-                else:
-                    C = deltas.t().mm(deltas) / dx.shape[0] + jitter
-
-                return encode(M, C=C, encoding=encoding)
+                deltas = dx - dx.mean(dim=0)
+                jitter = 1e-9
+                ret = None
+                while jitter < 10:
+                    try:
+                        I_ = jitter * torch.eye(
+                            dx.shape[-1], device=dx.device, dtype=dx.dtype)
+                        if deltas.dim() == 3:
+                            deltas = deltas.permute(1, 0, 2)
+                            C = deltas.transpose(
+                                1, 2).bmm(deltas) / (dx.shape[0] - 1) 
+                            C += I_
+                        else:
+                            C = deltas.t().mm(deltas) / (dx.shape[0] - 1) + I_
+                        ret = encode(M, C=C, encoding=encoding)
+                        break
+                    except RuntimeError:
+                        jitter *= 10
+                        print jitter, C
+                if ret is not None:
+                    return ret
 
             S = dx.std(dim=0)
             return encode(M, S=S, encoding=encoding)
