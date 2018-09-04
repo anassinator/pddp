@@ -270,7 +270,8 @@ def bnn_dynamics_model_factory(state_size,
                 eps = self.eps2[i]
                 if x.dim() == 3:
                     eps = eps.unsqueeze(1).repeat(1, dx.shape[1], 1)
-                dx = dx + log_std.exp() * eps
+                noise_std = torch.min(log_std.exp(), dx.std(dim=0))
+                dx = dx + noise_std * eps
 
             if angular:
                 # We need the reduced state.
