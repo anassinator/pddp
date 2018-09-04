@@ -49,6 +49,10 @@ class DynamicsModel(torch.nn.Module):
         """State size (int)."""
         raise NotImplementedError
 
+    def resample(self):
+        """Resamples model parameters."""
+        pass
+
     def fit(self, X, U, dX, quiet=False, **kwargs):
         """Fits the dynamics model.
 
