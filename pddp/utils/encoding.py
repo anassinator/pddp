@@ -134,10 +134,7 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
         if C.dim() == 2:
             L = C.potrf()
         elif C.dim() == 3:
-            # TODO: Remove for-loop.
-            L = torch.zeros_like(C, requires_grad=M.requires_grad)
-            for c, l in zip(C, L):
-                l += c.potrf()
+            L = torch.stack([c.potrf() for c in C])
         else:
             raise NotImplementedError("Expected a 2D or 3D tensor")
 
