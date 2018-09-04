@@ -32,7 +32,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from ..base import DynamicsModel
 from .losses import gaussian_log_likelihood
 from ...utils.classproperty import classproperty
-from ...utils.encoding import StateEncoding, decode_mean, decode_std, decode_covar, encode
+from ...utils.encoding import (StateEncoding, decode_mean, decode_std,
+                               decode_covar_sqrt, encode)
 from ...utils.angular import (augment_encoded_state, augment_state,
                               infer_augmented_state_size, reduce_state)
 
@@ -218,15 +219,15 @@ def bnn_dynamics_model_factory(state_size,
                                           state_size)
 
             mean = decode_mean(z, encoding)
-            C = decode_covar(z, encoding)
+            L = decode_covar_sqrt(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
 
             if sample_input_distribution:
                 if resample or i not in self.eps1:
                     if x.dim() == 3:
-                        # This is required to make batched jacobians correct as the
-                        # batches are in the second dimension and should share the same
-                        # samples.
+                        # This is required to make batched jacobians correct as
+                        # the batches are in the second dimension and should
+                        # share the same samples.
                         eps = torch.randn_like(x[:, 0, :])
                     else:
                         eps = torch.randn_like(x)
@@ -235,11 +236,8 @@ def bnn_dynamics_model_factory(state_size,
                 eps = self.eps1[i]
                 if x.dim() == 3:
                     eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
-                    # TODO: Use batch Cholesky.
-                    L = torch.stack([c.potrf() for c in C])
-                    x = x + (eps[:, :, :, None]*L[None, :, :, :]).sum(-2)
+                    x = x + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
                 else:
-                    L = C.potrf()
                     x = x + eps.mm(L)
 
             u_ = u.expand(self.n_particles, *u.shape)
@@ -264,9 +262,9 @@ def bnn_dynamics_model_factory(state_size,
             if use_predicted_std:
                 if resample or i not in self.eps2:
                     if dx.dim() == 3:
-                        # This is required to make batched jacobians correct as the
-                        # batches are in the second dimension and should share the
-                        # same samples.
+                        # This is required to make batched jacobians correct as
+                        # the batches are in the second dimension and should
+                        # share the same samples.
                         eps = torch.randn_like(dx[:, 0, :])
                     else:
                         eps = torch.randn_like(dx)
@@ -301,7 +299,7 @@ def bnn_dynamics_model_factory(state_size,
                         if deltas.dim() == 3:
                             deltas = deltas.permute(1, 0, 2)
                             C = deltas.transpose(
-                                1, 2).bmm(deltas) / (dx.shape[0] - 1) 
+                                1, 2).bmm(deltas) / (dx.shape[0] - 1)
                             C += I_
                         else:
                             C = deltas.t().mm(deltas) / (dx.shape[0] - 1) + I_
@@ -309,7 +307,6 @@ def bnn_dynamics_model_factory(state_size,
                         break
                     except RuntimeError:
                         jitter *= 10
-                        print jitter, C
                 if ret is not None:
                     return ret
 

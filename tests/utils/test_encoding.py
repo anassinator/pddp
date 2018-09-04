@@ -148,6 +148,7 @@ def test_decode_mean_covar_var_std(encoding):
 
     mean = decode_mean(Z, encoding)
     covar = decode_covar(Z, encoding)
+    covar_sqrt = decode_covar_sqrt(Z, encoding)
     var = decode_var(Z, encoding)
     std = decode_std(Z, encoding)
 
@@ -155,6 +156,8 @@ def test_decode_mean_covar_var_std(encoding):
     assert covar.shape == (N, M, M)
     assert var.shape == (N, M)
     assert std.shape == (N, M)
+
+    assert covar_sqrt.transpose(-2, -1).matmul(covar_sqrt).allclose(covar, 1e-3)
 
     assert mean.isclose(expected_mean).all()
 

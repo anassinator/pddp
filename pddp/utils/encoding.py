@@ -310,6 +310,70 @@ def decode_std(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         raise NotImplementedError("Unknown StateEncoding: {}".format(encoding))
 
 
+def decode_covar_sqrt(Z, encoding=StateEncoding.DEFAULT, state_size=None):
+    """Computes the Cholesky decomposition of the original state covariances
+    from a z-encoded state in batches.
+
+    Args:
+        Z (Tensor<..., n>): Encoded state vector(s).
+        encoding (int): StateEncoding enum.
+        state_size (int): Original state size, default: inferred.
+
+    Returns:
+        Cholesky decomposition of covariance(s)
+            (Tensor<..., state_size, state_size>).
+    """
+    _, other, state_size = _split(Z, encoding, state_size)
+
+    if encoding == StateEncoding.FULL_COVARIANCE_MATRIX:
+        if Z.dim() == 1:
+            return other.view(state_size, state_size).potrf()
+        elif Z.dim() == 2:
+            # TODO: Use batch Cholesky.
+            C = other.view(Z.shape[0], state_size, state_size)
+            L = torch.stack([c.potrf() for c in C])
+            return L
+        else:
+            raise NotImplementedError("Expected a 1D or 2D tensor")
+    elif encoding == StateEncoding.UPPER_TRIANGULAR_CHOLESKY:
+        L = _L_from_flat_triu(other, state_size)
+        return L
+    elif encoding == StateEncoding.VARIANCE_ONLY:
+        if other.dim() == 1:
+            return other.diag()
+        elif other.dim() == 2:
+            # TODO: Remove for-loop.
+            return torch.stack([x.diag().sqrt() for x in other])
+        else:
+            raise NotImplementedError("Expected a 1D or 2D tensor")
+    elif encoding == StateEncoding.STANDARD_DEVIATION_ONLY:
+        if other.dim() == 1:
+            return other.diag().pow(2)
+        elif other.dim() == 2:
+            # TODO: Remove for-loop.
+            return torch.stack([x.diag() for x in other])
+        else:
+            raise NotImplementedError("Expected a 1D or 2D tensor")
+    elif encoding == StateEncoding.IGNORE_UNCERTAINTY:
+        # Hard-code a unit normal distribution.
+        L = 1e-3 * torch.eye(
+            state_size, state_size, dtype=Z.dtype, device=Z.device)
+
+        if Z.dim() == 1:
+            pass
+        elif Z.dim() == 2:
+            L = L.expand(Z.shape[0], state_size, state_size)
+        else:
+            raise NotImplementedError("Expected a 1D or 2D tensor")
+
+        if Z.requires_grad:
+            L.requires_grad_()
+
+        return L
+    else:
+        raise NotImplementedError("Unknown StateEncoding: {}".format(encoding))
+
+
 def _split(Z, encoding=StateEncoding.DEFAULT, state_size=None):
     """Splits a z-encoded vector or a batch of z-encoded vectors into means and
     the remainder.
