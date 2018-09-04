@@ -265,11 +265,10 @@ class PDDPController(iLQRController):
                 break
 
             # Sample new data.
-            dataset, U, J = _train(self.env, self.model, self.cost, U,
-                                   n_sample_trajectories, dataset,
-                                   concatenate_datasets, max_dataset_size,
-                                   quiet, on_trial, total_trials,
-                                   self._training_opts, self._cost_opts)
+            dataset, U, J = _train(
+                self.env, self.model, self.cost, U, n_sample_trajectories,
+                dataset, concatenate_datasets, max_dataset_size, quiet,
+                on_trial, total_trials, self._training_opts, self._cost_opts)
             total_trials += n_sample_trajectories
 
             if J < bestJ:
@@ -288,8 +287,8 @@ def _train(env,
            cost,
            U,
            n_trajectories,
-           dataset,
-           concatenate_datasets,
+           dataset=None,
+           concatenate_datasets=False,
            max_dataset_size=None,
            quiet=False,
            on_trial=None,

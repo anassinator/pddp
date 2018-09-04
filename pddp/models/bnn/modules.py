@@ -34,7 +34,7 @@ from .losses import gaussian_log_likelihood
 from ...utils.classproperty import classproperty
 from ...utils.encoding import (StateEncoding, decode_mean, decode_std,
                                decode_covar_sqrt, encode)
-from ...utils.angular import (augment_encoded_state, augment_state,
+from ...utils.angular import (augment_state, augment_state,
                               infer_augmented_state_size, reduce_state)
 
 
@@ -212,12 +212,6 @@ def bnn_dynamics_model_factory(state_size,
                     (Tensor<..., encoded_state_size>) or next samples
                     (Tensor<n_particles, ..., state_size>).
             """
-            if angular:
-                original_mean = decode_mean(z, encoding)
-                z = augment_encoded_state(z, angular_indices,
-                                          non_angular_indices, encoding,
-                                          state_size)
-
             mean = decode_mean(z, encoding)
             L = decode_covar_sqrt(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
@@ -239,6 +233,9 @@ def bnn_dynamics_model_factory(state_size,
                     x = x + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
                 else:
                     x = x + eps.mm(L)
+
+            if angular:
+                x = augment_state(x, angular_indices, non_angular_indices)
 
             u_ = u.expand(self.n_particles, *u.shape)
             x_ = torch.cat([x, u_], dim=-1)
@@ -276,13 +273,7 @@ def bnn_dynamics_model_factory(state_size,
                 noise_std = torch.min(log_std.exp(), dx.std(dim=0))
                 dx = dx + noise_std * eps
 
-            if angular:
-                # We need the reduced state.
-                mean = original_mean
-
             if return_samples:
-                if angular:
-                    x = reduce_state(x, angular_indices, non_angular_indices)
                 return x + dx
 
             M = mean + dx.mean(dim=0)
