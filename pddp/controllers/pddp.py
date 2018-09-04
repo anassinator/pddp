@@ -116,15 +116,20 @@ class PDDPController(iLQRController):
                 U (Tensor<N, action_size>): Optimal action path.
         """
         U = U.detach()
+        bestU = U
+        bestJ = 0
         N, action_size = U.shape
 
         # Build initial dataset.
         dataset = None
         if self.training and train_on_start:
-            dataset, U = _train(self.env, self.model, self.cost, U,
-                                n_initial_sample_trajectories, None,
-                                concatenate_datasets, quiet,
-                                self._training_opts, self._cost_opts)
+            dataset, U, J = _train(self.env, self.model, self.cost, U,
+                                   n_initial_sample_trajectories, None,
+                                   concatenate_datasets, quiet,
+                                   self._training_opts, self._cost_opts)
+            if bestU is None or J < bestJ:
+                bestU = U
+        U = bestU
 
         # Backtracking line search candidates 0 < alpha <= 1.
         alphas = 1.1**(-torch.arange(10.0)**2)
@@ -141,6 +146,7 @@ class PDDPController(iLQRController):
             z0 = self.env.get_state().encode(encoding).detach()
 
             converged = False
+
             with trange(n_iterations, desc="PDDP", disable=quiet) as pbar:
                 for i in pbar:
                     accepted = False
@@ -227,10 +233,14 @@ class PDDPController(iLQRController):
                     break
 
             if self.training:
-                dataset, U = _train(self.env, self.model, self.cost, U,
-                                    n_sample_trajectories, dataset,
-                                    concatenate_datasets, quiet,
-                                    self._training_opts, self._cost_opts)
+                dataset, U, J = _train(self.env, self.model, self.cost, U,
+                                       n_sample_trajectories, dataset,
+                                       concatenate_datasets, quiet,
+                                       self._training_opts, self._cost_opts)
+
+                if bestU is None or J < bestJ:
+                    bestU = U
+            U = bestU
 
         return Z, U
 
@@ -264,8 +274,8 @@ def _train(env,
 
     # Pick best trajectory to continue.
     U = Us[sample_losses.argmax()].detach()
-
-    return dataset, U
+    J = sample_losses.max()
+    return dataset, U, J
 
 
 @torch.no_grad()
