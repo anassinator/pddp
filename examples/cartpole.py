@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import six
 import time
 import torch
 import numpy as np
@@ -15,7 +16,7 @@ torch.set_flush_denormal(True)
 N = 25  # Horizon length.
 DT = 0.1  # Time step (s).
 RENDER = True  # Whether to render the environment or not.
-ENCODING = pddp.StateEncoding.STANDARD_DEVIATION_ONLY
+ENCODING = pddp.StateEncoding.DEFAULT
 
 
 def plot_loss(J_hist):
@@ -138,7 +139,7 @@ if __name__ == "__main__":
 
     if RENDER:
         # Wait for user interaction before trial.
-        _ = input("Press ENTER to run")
+        _ = six.input("Press ENTER to run")
 
     Z_ = torch.empty_like(Z)
     Z_[0] = env.get_state().encode(ENCODING)
@@ -148,6 +149,6 @@ if __name__ == "__main__":
         time.sleep(DT)
 
     # Wait for user interaction to close everything.
-    _ = input("Press ENTER to exit")
+    _ = six.input("Press ENTER to exit")
 
     env.close()

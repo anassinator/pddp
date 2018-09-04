@@ -128,7 +128,7 @@ class PDDPController(iLQRController):
         """
         U = U.detach()
         bestU = U
-        bestJ = 1e30
+        bestJ = np.inf
         N, action_size = U.shape
 
         # Build initial dataset.
@@ -141,10 +141,8 @@ class PDDPController(iLQRController):
                                    total_trials, self._training_opts,
                                    self._cost_opts)
             total_trials += n_initial_sample_trajectories
-
-            if J < bestJ:
-                bestU = U
-                bestJ = J
+            bestU = U
+            bestJ = J
 
         # Backtracking line search candidates 0 < alpha <= 1.
         alphas = 1.1**(-torch.arange(10.0)**2)
