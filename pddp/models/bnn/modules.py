@@ -220,15 +220,7 @@ def bnn_dynamics_model_factory(state_size,
             # Normalize.
             X_ = self._normalize_input(X_)
 
-            if X_.dim() == 3:
-                # Shuffle the dimensions for the proper masks to be used in
-                # batch jacobians.
-                X_ = X_.permute(1, 0, 2)
-
             output = self.model(X_, resample=resample)
-            if output.dim() == 3:
-                # Unshuffle the dimensions.
-                output = output.permute(1, 0, 2)
 
             dx, log_std = output.split([state_size, state_size], dim=-1)
             dx, log_std = self._scale_output(dx, log_std)
@@ -239,7 +231,7 @@ def bnn_dynamics_model_factory(state_size,
                         # This is required to make batched jacobians correct as
                         # the batches are in the second dimension and should
                         # share the same samples.
-                        eps = torch.randn_like(dx[:, 0, :])
+                        eps = torch.randn_like(dx[0, :, :])
                     else:
                         eps = torch.randn_like(dx)
 
@@ -247,7 +239,7 @@ def bnn_dynamics_model_factory(state_size,
 
                 eps = self.eps_out[i]
                 if X.dim() == 3:
-                    eps = eps.unsqueeze(1).repeat(1, dx.shape[1], 1)
+                    eps = eps.unsqueeze(0).repeat(dx.shape[0], 1, 1)
 
                 noise_std = torch.min(log_std.exp(), dx.std(dim=0))
                 dx = dx + noise_std * eps
