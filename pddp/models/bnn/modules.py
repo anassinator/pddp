@@ -214,6 +214,7 @@ def bnn_dynamics_model_factory(state_size,
             """
             mean = decode_mean(z, encoding)
             L = decode_covar_sqrt(z, encoding)
+            std = decode_std(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
 
             if sample_input_distribution:
@@ -232,13 +233,15 @@ def bnn_dynamics_model_factory(state_size,
                     eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
                     x = x + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
                 else:
-                    x = x + eps.mm(L)
+                    x = x + eps * std
 
             if angular:
-                x = augment_state(x, angular_indices, non_angular_indices)
+                x_ = augment_state(x, angular_indices, non_angular_indices)
+            else:
+                x_ = x
 
             u_ = u.expand(self.n_particles, *u.shape)
-            x_ = torch.cat([x, u_], dim=-1)
+            x_ = torch.cat([x_, u_], dim=-1)
 
             # Normalize.
             x_ = self._normalize_input(x_)
@@ -273,10 +276,11 @@ def bnn_dynamics_model_factory(state_size,
                 noise_std = torch.min(log_std.exp(), dx.std(dim=0))
                 dx = dx + noise_std * eps
 
+            output = x + dx
             if return_samples:
-                return x + dx
+                return output
 
-            M = mean + dx.mean(dim=0)
+            M = output.mean(dim=0)
             if encoding in (StateEncoding.FULL_COVARIANCE_MATRIX,
                             StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
                 # Compute full covariance matrix when needed.
@@ -301,7 +305,7 @@ def bnn_dynamics_model_factory(state_size,
                 if ret is not None:
                     return ret
 
-            S = dx.std(dim=0)
+            S = output.std(dim=0)
             return encode(M, S=S, encoding=encoding)
 
     return BNNDynamicsModel
