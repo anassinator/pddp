@@ -43,6 +43,7 @@ def bnn_dynamics_model_factory(state_size,
                                hidden_features,
                                angular_indices=None,
                                non_angular_indices=None,
+                               particles=False,
                                **kwargs):
     """A BNNDynamicsModel factory.
 
@@ -50,6 +51,11 @@ def bnn_dynamics_model_factory(state_size,
         state_size (int): Augmented state size.
         action_size (int): Action size.
         hidden_features (list<int>): Ordered list of hidden dimensions.
+        angular_indices (Tensor<n>): Column indices of angular states.
+        non_angular_indices (Tensor<m>): Complementary indices of
+            `angular_indices`.
+        particles (bool): Whether to construct a model that deals with
+            particles directly instead or not.
         **kwargs (dict): Additional key-word arguments to pass to
             `bayesian_model()`.
 
@@ -62,23 +68,17 @@ def bnn_dynamics_model_factory(state_size,
         augmented_state_size = infer_augmented_state_size(
             angular_indices, non_angular_indices)
 
-    class BNNDynamicsModel(DynamicsModel):
+    class ParticlesBNNDynamicsModel(DynamicsModel):
 
         """Bayesian neural network dynamics model."""
 
-        def __init__(self, n_particles=100):
-            """Constructs a BNNDynamicsModel.
-
-            Args:
-                n_particles (int): Number of particles.
-            """
-            super(BNNDynamicsModel, self).__init__()
+        def __init__(self):
+            """Constructs a ParticlesBNNDynamicsModel."""
+            super(ParticlesBNNDynamicsModel, self).__init__()
 
             self.model = bayesian_model(augmented_state_size + action_size,
                                         2 * state_size, hidden_features,
                                         **kwargs)
-
-            self.n_particles = n_particles
 
             # Normalization parameters.
             self.register_buffer("X_mean", torch.tensor(0.0))
@@ -87,9 +87,9 @@ def bnn_dynamics_model_factory(state_size,
             self.register_buffer("dX_mean", torch.tensor(0.0))
             self.register_buffer("dX_std", torch.tensor(1.0))
             self.register_buffer("dX_std_inv", torch.tensor(1.0))
-            self.eps1 = {}
-            self.eps2 = {}
-            self.output = {}
+
+            # Noise parameters.
+            self.eps_out = {}
 
         @classproperty
         def action_size(cls):
@@ -103,9 +103,7 @@ def bnn_dynamics_model_factory(state_size,
 
         def resample(self):
             """Resamples model."""
-            self.eps1 = {}
-            self.eps2 = {}
-            self.output = {}
+            self.eps_out = {}
             self.model.resample()
 
         def _normalize_input(self, x_):
@@ -185,14 +183,105 @@ def bnn_dynamics_model_factory(state_size,
                     optimizer.step()
 
         def forward(self,
+                    X,
+                    u,
+                    i,
+                    resample=False,
+                    use_predicted_std=False,
+                    infer_noise_variables=True,
+                    **kwargs):
+            """Dynamics model function.
+
+            Args:
+                X (Tensor<..., n_particles, state_size>): State particles.
+                u (Tensor<..., action_size>): Action vector(s).
+                i (Tensor<...>): Time index.
+                resample (bool): Whether to force resample.
+                sample_input_distribution (bool): Whether to sample particles
+                    from the input distribution or simply use their mean.
+                use_predicted_std (bool): Whether to use the predicted standard
+                    deviations in the inference or not.
+
+            Returns:
+                Next state particles (Tensor<..., n_particles, state_size>).
+            """
+            n_particles = X.shape[-2]
+            if angular:
+                X_ = augment_state(X, angular_indices, non_angular_indices)
+            else:
+                X_ = X
+
+            u_ = u.expand(n_particles, *u.shape)
+            if u_.dim() == 3:
+                u_ = u_.permute(1, 0, 2)
+
+            X_ = torch.cat([X_, u_], dim=-1)
+
+            # Normalize.
+            X_ = self._normalize_input(X_)
+
+            if X_.dim() == 3:
+                # Shuffle the dimensions for the proper masks to be used in
+                # batch jacobians.
+                X_ = X_.permute(1, 0, 2)
+
+            output = self.model(X_, resample=resample)
+            if output.dim() == 3:
+                # Unshuffle the dimensions.
+                output = output.permute(1, 0, 2)
+
+            dx, log_std = output.split([state_size, state_size], dim=-1)
+            dx, log_std = self._scale_output(dx, log_std)
+
+            if use_predicted_std:
+                if resample or i not in self.eps_out:
+                    if dx.dim() == 3:
+                        # This is required to make batched jacobians correct as
+                        # the batches are in the second dimension and should
+                        # share the same samples.
+                        eps = torch.randn_like(dx[:, 0, :])
+                    else:
+                        eps = torch.randn_like(dx)
+
+                    self.eps_out[i] = eps
+
+                eps = self.eps_out[i]
+                if X.dim() == 3:
+                    eps = eps.unsqueeze(1).repeat(1, dx.shape[1], 1)
+
+                noise_std = torch.min(log_std.exp(), dx.std(dim=0))
+                dx = dx + noise_std * eps
+
+            return X + dx
+
+    class BNNDynamicsModel(ParticlesBNNDynamicsModel):
+
+        """Bayesian neural network dynamics model."""
+
+        def __init__(self, n_particles=100):
+            """Constructs a BNNDynamicsModel.
+
+            Args:
+                n_particles (int): Number of particles.
+            """
+            super(BNNDynamicsModel, self).__init__()
+            self.n_particles = n_particles
+            self.eps_in = {}
+            self.output = {}
+
+        def resample(self):
+            """Resamples model."""
+            self.eps_in = {}
+            self.output = {}
+            super(BNNDynamicsModel, self).resample()
+
+        def forward(self,
                     z,
                     u,
                     i,
                     encoding=StateEncoding.DEFAULT,
                     resample=False,
-                    return_samples=False,
                     sample_input_distribution=True,
-                    use_predicted_std=False,
                     infer_noise_variables=True,
                     **kwargs):
             """Dynamics model function.
@@ -203,12 +292,10 @@ def bnn_dynamics_model_factory(state_size,
                 i (Tensor<...>): Time index.
                 encoding (int): StateEncoding enum.
                 resample (bool): Whether to force resample.
-                return_samples (bool): Whether to return all samples instead of
-                    the encoded state distribution.
                 sample_input_distribution (bool): Whether to sample particles
                     from the input distribution or simply use their mean.
-                use_predicted_std (bool): Whether to use the predicted standard
-                    deviations in the inference or not.
+                infer_noise_variables (bool): Whether to infer the noise
+                    variables based on previous particles or not.
 
             Returns:
                 Next encoded state distribution
@@ -216,112 +303,88 @@ def bnn_dynamics_model_factory(state_size,
                     (Tensor<n_particles, ..., state_size>).
             """
             mean = decode_mean(z, encoding)
-            L = decode_covar_sqrt(z, encoding)
-            x = mean.expand(self.n_particles, *mean.shape)
+            X = mean.expand(self.n_particles, *mean.shape)
 
             if sample_input_distribution:
-                if resample or i not in self.eps1:
-                    if x.dim() == 3:
+                if resample or i not in self.eps_in:
+                    if X.dim() == 3:
                         # This is required to make batched jacobians correct as
                         # the batches are in the second dimension and should
                         # share the same samples.
-                        eps = torch.randn_like(x[:, 0, :])
+                        eps = torch.randn_like(X[:, 0, :])
                     else:
-                        eps = torch.randn_like(x)
-                    self.eps1[i] = eps
+                        eps = torch.randn_like(X)
+                    self.eps_in[i] = eps
 
+                L = decode_covar_sqrt(z, encoding)
                 if infer_noise_variables and i > 0:
-                    if x.dim() == 3:
+                    if X.dim() == 3:
                         deltas = self.output[i - 1][:, 0, :] - mean[0]
                         eps = torch.mm(deltas, L[0].inverse()).detach()
                     else:
                         deltas = self.output[i - 1] - mean
                         eps = torch.mm(deltas, L.inverse()).detach()
                 else:
-                    eps = self.eps1[i]
+                    eps = self.eps_in[i]
 
-                if x.dim() == 3:
-                    eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
-                    x = x + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
+                if X.dim() == 3:
+                    eps = eps.unsqueeze(1).repeat(1, X.shape[1], 1)
+                    X = X + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
                 else:
-                    x = x + eps.mm(L)
+                    X = X + eps.mm(L)
 
-            if angular:
-                x_ = augment_state(x, angular_indices, non_angular_indices)
-            else:
-                x_ = x
+            if X.dim() == 3:
+                X = X.permute(1, 0, 2)
 
-            u_ = u.expand(self.n_particles, *u.shape)
-            x_ = torch.cat([x_, u_], dim=-1)
+            output = super(BNNDynamicsModel, self).forward(
+                X, u, i, resample=resample, **kwargs)
 
-            # Normalize.
-            x_ = self._normalize_input(x_)
-
-            if x_.dim() == 3:
-                # Shuffle the dimensions for the proper masks to be used in
-                # batch jacobians.
-                x_ = x_.permute(1, 0, 2)
-
-            output = self.model(x_, resample=resample)
             if output.dim() == 3:
-                # Unshuffle the dimensions.
                 output = output.permute(1, 0, 2)
 
-            dx, log_std = output.split([state_size, state_size], dim=-1)
-            dx, log_std = self._scale_output(dx, log_std)
-
-            if use_predicted_std:
-                if resample or i not in self.eps2:
-                    if dx.dim() == 3:
-                        # This is required to make batched jacobians correct as
-                        # the batches are in the second dimension and should
-                        # share the same samples.
-                        eps = torch.randn_like(dx[:, 0, :])
-                    else:
-                        eps = torch.randn_like(dx)
-                    self.eps2[i] = eps
-
-                eps = self.eps2[i]
-                if x.dim() == 3:
-                    eps = eps.unsqueeze(1).repeat(1, dx.shape[1], 1)
-                noise_std = torch.min(log_std.exp(), dx.std(dim=0))
-                dx = dx + noise_std * eps
-
-            output = x + dx
             if infer_noise_variables:
                 self.output[i] = output.detach()
-            if return_samples:
-                return output
 
             M = output.mean(dim=0)
             if encoding in (StateEncoding.FULL_COVARIANCE_MATRIX,
                             StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
                 # Compute full covariance matrix when needed.
-                deltas = output - output.mean(dim=0)
                 jitter = 1e-12
-                ret = None
                 while jitter < 10:
                     try:
-                        I_ = jitter * torch.eye(
-                            dx.shape[-1], device=dx.device, dtype=dx.dtype)
-                        if deltas.dim() == 3:
-                            deltas = deltas.permute(1, 0, 2)
-                            C = deltas.transpose(
-                                1, 2).bmm(deltas) / (dx.shape[0] - 1)
-                            C += I_
-                        else:
-                            C = deltas.t().mm(deltas) / (dx.shape[0] - 1) + I_
-                        ret = encode(M, C=C, encoding=encoding)
-                        break
+                        C = _particles_covar(output, jitter)
+                        return encode(M, C=C, encoding=encoding)
                     except RuntimeError:
                         jitter *= 10
-                if ret is not None:
-                    return ret
 
             S = output.std(dim=0)
             return encode(M, S=S, encoding=encoding)
 
+    if particles:
+        return ParticlesBNNDynamicsModel
+
     return BNNDynamicsModel
+
+
+def _particles_covar(x, jitter=1e-12):
+    """Computes the covariance of a set of particles.
+
+    Args:
+        x (Tensor<..., n_particles, state_size>): Particle set.
+        jitter (float): Jitter to add to the diagonals.
+
+    Returns:
+        Covariance matrix (Tensor<..., state_size, state_size>).
+    """
+    deltas = x - x.mean(dim=0)
+    I_ = jitter * torch.eye(x.shape[-1], device=x.device, dtype=x.dtype)
+    if deltas.dim() == 3:
+        deltas = deltas.permute(1, 0, 2)
+        C = deltas.transpose(1, 2).bmm(deltas) / (x.shape[0] - 1)
+        C += I_
+    else:
+        C = deltas.t().mm(deltas) / (x.shape[0] - 1) + I_
+    return C
 
 
 def _cycle(iterable, total):
