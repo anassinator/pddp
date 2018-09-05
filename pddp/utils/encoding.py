@@ -340,7 +340,7 @@ def decode_covar_sqrt(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         return L
     elif encoding == StateEncoding.VARIANCE_ONLY:
         if other.dim() == 1:
-            return other.diag()
+            return other.diag().sqrt()
         elif other.dim() == 2:
             # TODO: Remove for-loop.
             return torch.stack([x.diag().sqrt() for x in other])
@@ -348,7 +348,7 @@ def decode_covar_sqrt(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             raise NotImplementedError("Expected a 1D or 2D tensor")
     elif encoding == StateEncoding.STANDARD_DEVIATION_ONLY:
         if other.dim() == 1:
-            return other.diag().pow(2)
+            return other.diag()
         elif other.dim() == 2:
             # TODO: Remove for-loop.
             return torch.stack([x.diag() for x in other])

@@ -233,7 +233,7 @@ def bnn_dynamics_model_factory(state_size,
                     eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
                     x = x + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
                 else:
-                    x = x + eps * std
+                    x = x + eps.mm(L)
 
             if angular:
                 x_ = augment_state(x, angular_indices, non_angular_indices)
@@ -284,8 +284,8 @@ def bnn_dynamics_model_factory(state_size,
             if encoding in (StateEncoding.FULL_COVARIANCE_MATRIX,
                             StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
                 # Compute full covariance matrix when needed.
-                deltas = dx - dx.mean(dim=0)
-                jitter = 1e-9
+                deltas = output - output.mean(dim=0)
+                jitter = 1e-12
                 ret = None
                 while jitter < 10:
                     try:
