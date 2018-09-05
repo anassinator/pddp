@@ -193,7 +193,7 @@ def bnn_dynamics_model_factory(state_size,
                     return_samples=False,
                     sample_input_distribution=True,
                     use_predicted_std=False,
-                    infer_noise_variables=False,
+                    infer_noise_variables=True,
                     **kwargs):
             """Dynamics model function.
 
@@ -233,10 +233,10 @@ def bnn_dynamics_model_factory(state_size,
                 if infer_noise_variables and i > 0:
                     if x.dim() == 3:
                         deltas = self.output[i-1][:, 0, :] - mean[0]
-                        eps = torch.mm(deltas, L[0].inverse())
+                        eps = torch.mm(deltas, L[0].inverse()).detach()
                     else:
                         deltas = self.output[i-1] - mean
-                        eps = torch.mm(deltas, L.inverse())
+                        eps = torch.mm(deltas, L.inverse()).detach()
                 else:
                     eps = self.eps1[i]
 
@@ -567,7 +567,7 @@ def bayesian_model(in_features,
                        gain=torch.nn.init.calculate_gain("relu")),
                    bias_initializer=partial(
                        torch.nn.init.uniform_, a=-0.1, b=0.1),
-                   initial_p=0.5,
+                   initial_p=0.1,
                    dropout_layers=CDropout,
                    input_dropout=None):
     """Constructs and initializes a Bayesian neural network with dropout.

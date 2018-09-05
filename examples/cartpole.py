@@ -118,7 +118,7 @@ if __name__ == "__main__":
         env,
         model,
         cost,
-        training_opts={"n_iter": 1000},
+        training_opts={"n_iter": 2000},
     )
     U = torch.randn(N, model.action_size)
 
