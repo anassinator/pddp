@@ -98,17 +98,17 @@ class iLQRController(Controller):
         """
         U = U.detach()
         N, action_size = U.shape
+        tensor_opts = {"dtype": U.dtype, "device": U.device}
 
         # Backtracking line search candidates 0 < alpha <= 1.
-        alphas = 1.1**(-torch.arange(10.0)**2)
+        alphas = 1.1**(-torch.arange(10.0)**2).to(**tensor_opts)
 
         # Reset regularization term.
         self._mu = 1.0
         self._delta = self._delta_0
 
         # Get initial state distribution.
-        z0 = self.env.get_state().encode(encoding).detach()
-        encoded_state_size = z0.shape[-1]
+        z0 = self.env.get_state().encode(encoding).detach().to(**tensor_opts)
 
         changed = True
         converged = False

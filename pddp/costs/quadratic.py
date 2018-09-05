@@ -83,7 +83,7 @@ class QRCost(Cost):
         Q = self.Q_term if terminal else self.Q
 
         mean = decode_mean(z, encoding)
-        x_ = (mean - self.x_goal)
+        x_ = mean - self.x_goal
         y = x_.matmul(Q).matmul(x_.t() if x_.dim() > 1 else x_)
         cost = y.diag() if x_.dim() > 1 else y
 

@@ -137,6 +137,7 @@ class PDDPController(iLQRController):
         bestU = U
         bestJ = np.inf
         N, action_size = U.shape
+        tensor_opts = {"dtype": U.dtype, "device": U.device}
 
         # Build initial dataset.
         dataset = None
@@ -152,7 +153,7 @@ class PDDPController(iLQRController):
             bestJ = J
 
         # Backtracking line search candidates 0 < alpha <= 1.
-        alphas = 1.1**(-torch.arange(10.0)**2)
+        alphas = 1.1**(-torch.arange(10.0)**2).to(**tensor_opts)
 
         while True:
             if resample_model and hasattr(self.model, "resample"):
@@ -164,7 +165,8 @@ class PDDPController(iLQRController):
             self._delta = self._delta_0
 
             # Get initial state distribution.
-            z0 = self.env.get_state().encode(encoding).detach()
+            z0 = self.env.get_state().encode(encoding).detach().to(
+                **tensor_opts)
 
             changed = True
             converged = False
@@ -341,9 +343,9 @@ def _sample(env, Us, cost, quiet=False, on_trial=None, n_trials=0,
             for i, u in enumerate(current_U):
                 u = u.detach()
 
-                x = env.get_state().mean()
+                x = env.get_state().mean().to(**tensor_opts)
                 env.apply(u)
-                x_next = env.get_state().mean()
+                x_next = env.get_state().mean().to(**tensor_opts)
 
                 j = base_i + i
                 X[j] = x
@@ -355,7 +357,7 @@ def _sample(env, Us, cost, quiet=False, on_trial=None, n_trials=0,
                     u,
                     i,
                     encoding=StateEncoding.IGNORE_UNCERTAINTY,
-                    **cost_opts)
+                    **cost_opts).detach()
 
             L[trajectory] += cost(
                 x_next,
@@ -363,7 +365,7 @@ def _sample(env, Us, cost, quiet=False, on_trial=None, n_trials=0,
                 i,
                 terminal=True,
                 encoding=StateEncoding.IGNORE_UNCERTAINTY,
-                **cost_opts)
+                **cost_opts).detach()
 
             if on_trial:
                 on_trial(n_trials + trajectory, X[base_i:base_i + N].detach(),

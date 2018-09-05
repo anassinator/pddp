@@ -525,7 +525,7 @@ class BSequential(torch.nn.Sequential):
         Returns:
             Total regularization cost (Tensor).
         """
-        reg = torch.tensor(0.0)
+        reg = 0
         children = list(self._modules.values())
         for i, child in enumerate(children):
             if isinstance(child, BSequential):
@@ -567,7 +567,7 @@ def bayesian_model(in_features,
                        gain=torch.nn.init.calculate_gain("relu")),
                    bias_initializer=partial(
                        torch.nn.init.uniform_, a=-0.1, b=0.1),
-                   initial_p=0.1,
+                   initial_p=0.5,
                    dropout_layers=CDropout,
                    input_dropout=None):
     """Constructs and initializes a Bayesian neural network with dropout.
