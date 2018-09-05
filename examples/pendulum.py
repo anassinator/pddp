@@ -73,7 +73,7 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
 
     if legend:
         plt.legend(
-            bbox_to_anchor=(0.0, 1.0, 1.0, 0.7),
+            bbox_to_anchor=(0.0, 1.0, 1.0, 0.5),
             loc="upper left",
             ncol=4,
             mode="expand",
@@ -90,7 +90,7 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
 if __name__ == "__main__":
     J_hist = []
 
-    plt.figure(figsize=(10, 9))
+    plt.figure(figsize=(10, 6))
     plt.ion()
     plt.show()
 
@@ -131,7 +131,6 @@ if __name__ == "__main__":
         cost,
         training_opts={
             "n_iter": 2000,
-            "reg": 1e-2,
             "learning_rate": 1e-3,
         },
     )

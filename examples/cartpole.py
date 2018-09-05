@@ -133,7 +133,6 @@ if __name__ == "__main__":
         cost,
         training_opts={
             "n_iter": 2000,
-            "reg": 0,
             "learning_rate": 1e-3,
         },
     )
