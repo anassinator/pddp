@@ -29,8 +29,8 @@ def plot_loss(J_hist):
 
 
 def plot_phase(X):
-    theta = np.unwrap(X[:, 2])  # Makes for smoother plots.
-    theta_dot = X[:, 3]
+    theta = np.unwrap(X[:, 0])  # Makes for smoother plots.
+    theta_dot = X[:, 1]
 
     plt.xlim(-3 * np.pi, 3 * np.pi)
     plt.ylim(-3 * np.pi, 3 * np.pi)
@@ -48,13 +48,11 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
     std_ = pddp.utils.encoding.decode_std(Z, encoding)
 
     labels = [
-        "Position (m)",
-        "Velocity (m/s)",
         "Orientation (rad)",
         "Angular velocity (rad/s)",
     ]
 
-    colors = ["C0", "C1", "C2", "C3"]
+    colors = ["C0", "C1"]
 
     if indices is None:
         indices = list(range(mean_.shape[-1]))
@@ -97,7 +95,7 @@ if __name__ == "__main__":
     plt.show()
 
     def on_trial(trial, X, U):
-        plt.subplot(5, 1, 1)
+        plt.subplot(3, 1, 1)
         plt.cla()
         plt.title("Trial {}".format(trial + 1))
         plot_path(X, encoding=pddp.StateEncoding.IGNORE_UNCERTAINTY)
@@ -106,7 +104,7 @@ if __name__ == "__main__":
         J_hist.append(J_opt.detach().numpy())
 
         for i in range(model.state_size):
-            plt.subplot(5, 1, i + 2)
+            plt.subplot(3, 1, i + 2)
             plt.cla()
             if i == 0:
                 plt.title("Iteration {}".format(iteration + 1))
@@ -114,9 +112,9 @@ if __name__ == "__main__":
                 plt.xlabel("Time step")
             plot_path(Z, indices=[i], legend=False)
 
-    cost = pddp.examples.cartpole.CartpoleCost()
-    env = pddp.examples.cartpole.CartpoleEnv(dt=DT, render=RENDER)
-    model_class = pddp.examples.cartpole.CartpoleDynamicsModel
+    cost = pddp.examples.pendulum.PendulumCost()
+    env = pddp.examples.pendulum.PendulumEnv(dt=DT, render=RENDER)
+    model_class = pddp.examples.pendulum.PendulumDynamicsModel
 
     model = pddp.models.bnn.bnn_dynamics_model_factory(
         env.state_size,
@@ -133,7 +131,7 @@ if __name__ == "__main__":
         cost,
         training_opts={
             "n_iter": 2000,
-            "reg": 0,
+            "reg": 1e-2,
             "learning_rate": 1e-3,
         },
     )

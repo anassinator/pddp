@@ -76,6 +76,7 @@ class PDDPController(iLQRController):
             max_trials=None,
             n_sample_trajectories=1,
             n_initial_sample_trajectories=2,
+            sampling_noise=1e-2,
             train_on_start=True,
             concatenate_datasets=True,
             max_dataset_size=1000,
@@ -117,6 +118,7 @@ class PDDPController(iLQRController):
                 the environment at a time.
             n_initial_sample_trajectories (int): Number of initial trajectories
                 to sample from the environment at a time.
+            sampling_noise (float): Sampling noise to add to trajectories.
             train_on_start (bool): Whether to sample trajectories and train the
                 model at the start or not.
             concatenate_datasets (bool): Whether to train on all data or just
@@ -140,11 +142,11 @@ class PDDPController(iLQRController):
         dataset = None
         total_trials = 0
         if self.training and train_on_start:
-            dataset, U, J = _train(self.env, self.model, self.cost, U,
-                                   n_initial_sample_trajectories, None,
-                                   concatenate_datasets, max_dataset_size,
-                                   quiet, on_trial, total_trials,
-                                   self._training_opts, self._cost_opts)
+            dataset, U, J = _train(
+                self.env, self.model, self.cost, U,
+                n_initial_sample_trajectories, None, concatenate_datasets,
+                max_dataset_size, quiet, on_trial, total_trials, sampling_noise,
+                self._training_opts, self._cost_opts)
             total_trials += n_initial_sample_trajectories
             bestU = U
             bestJ = J
@@ -268,7 +270,8 @@ class PDDPController(iLQRController):
             dataset, U, J = _train(
                 self.env, self.model, self.cost, U, n_sample_trajectories,
                 dataset, concatenate_datasets, max_dataset_size, quiet,
-                on_trial, total_trials, self._training_opts, self._cost_opts)
+                on_trial, total_trials, sampling_noise, self._training_opts,
+                self._cost_opts)
             total_trials += n_sample_trajectories
 
             if J < bestJ:
@@ -293,13 +296,14 @@ def _train(env,
            quiet=False,
            on_trial=None,
            n_trials=0,
+           noise=1e-2,
            training_opts={},
            cost_opts={}):
     model.train()
 
     # Sample new trajectories.
     Us = U.repeat(n_trajectories, 1, 1)
-    Us[1:] += torch.randn_like(Us[1:])
+    Us[1:] += noise * torch.randn_like(Us[1:])
     dataset_, sample_losses = _sample(env, Us, cost, quiet, on_trial, n_trials,
                                       cost_opts)
 
