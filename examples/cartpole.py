@@ -54,6 +54,8 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
         "Angular velocity (rad/s)",
     ]
 
+    colors = ["C0", "C1", "C2", "C3"]
+
     if indices is None:
         indices = list(range(mean_.shape[-1]))
 
@@ -62,19 +64,29 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
         mean = mean_[:, index].detach().numpy()
         std = std_[:, index].detach().numpy()
 
-        plt.plot(t, mean, label=labels[index])
+        plt.plot(t, mean, label=labels[index], color=colors[index])
 
         for i in range(1, 4):
             j = std_scale * i
             plt.gca().fill_between(
                 t.flat, (mean - j * std).flat, (mean + j * std).flat,
-                color="#dddddd",
-                alpha=1.0 / i)
+                color=colors[index],
+                alpha=1.0 / (i + 1))
 
     if legend:
-        plt.legend()
+        plt.legend(
+            bbox_to_anchor=(0.0, 1.0, 1.0, 0.7),
+            loc="upper left",
+            ncol=4,
+            mode="expand",
+            borderaxespad=0.)
 
-    plt.ylabel("State")
+    plt.xlim(0, N)
+    plt.ylim(-9, 9)
+    plt.yticks(range(-9, 10, 3))
+
+    plt.axhline(0, linestyle="--", color="#333333", linewidth=0.25)
+
     plt.tight_layout()
     plt.draw()
     plt.pause(0.001)
@@ -83,12 +95,12 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
 if __name__ == "__main__":
     J_hist = []
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(10, 9))
     plt.ion()
     plt.show()
 
     def on_trial(trial, X, U):
-        plt.subplot(2, 1, 1)
+        plt.subplot(5, 1, 1)
         plt.cla()
         plt.title("Trial {}".format(trial + 1))
         plot_path(X, encoding=pddp.StateEncoding.IGNORE_UNCERTAINTY)
@@ -96,11 +108,14 @@ if __name__ == "__main__":
     def on_iteration(iteration, Z, U, J_opt, accepted, converged):
         J_hist.append(J_opt.detach().numpy())
 
-        plt.subplot(2, 1, 2)
-        plt.cla()
-        plt.title("Iteration {}".format(iteration + 1))
-        plt.xlabel("Time steps")
-        plot_path(Z, legend=False)
+        for i in range(model.state_size):
+            plt.subplot(5, 1, i + 2)
+            plt.cla()
+            if i == 0:
+                plt.title("Iteration {}".format(iteration + 1))
+            if i == model.state_size:
+                plt.xlabel("Time step")
+            plot_path(Z, indices=[i], legend=False)
 
     cost = pddp.examples.cartpole.CartpoleCost()
     env = pddp.examples.cartpole.CartpoleEnv(dt=DT, render=RENDER)
