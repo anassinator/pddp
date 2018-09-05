@@ -89,6 +89,7 @@ def bnn_dynamics_model_factory(state_size,
             self.register_buffer("dX_std_inv", torch.tensor(1.0))
             self.eps1 = {}
             self.eps2 = {}
+            self.output = {}
 
         @classproperty
         def action_size(cls):
@@ -104,6 +105,7 @@ def bnn_dynamics_model_factory(state_size,
             """Resamples model."""
             self.eps1 = {}
             self.eps2 = {}
+            self.output = {}
             self.model.resample()
 
         def _normalize_input(self, x_):
@@ -191,6 +193,7 @@ def bnn_dynamics_model_factory(state_size,
                     return_samples=False,
                     sample_input_distribution=True,
                     use_predicted_std=False,
+                    infer_noise_variables=False,
                     **kwargs):
             """Dynamics model function.
 
@@ -214,7 +217,6 @@ def bnn_dynamics_model_factory(state_size,
             """
             mean = decode_mean(z, encoding)
             L = decode_covar_sqrt(z, encoding)
-            std = decode_std(z, encoding)
             x = mean.expand(self.n_particles, *mean.shape)
 
             if sample_input_distribution:
@@ -228,7 +230,12 @@ def bnn_dynamics_model_factory(state_size,
                         eps = torch.randn_like(x)
                     self.eps1[i] = eps
 
-                eps = self.eps1[i]
+                if infer_noise_variables and i > 0:
+                    deltas = self.output[i-1] - mean
+                    eps = torch.mm(deltas, L.inverse())
+                else:
+                    eps = self.eps1[i]
+
                 if x.dim() == 3:
                     eps = eps.unsqueeze(1).repeat(1, x.shape[1], 1)
                     x = x + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
@@ -277,6 +284,8 @@ def bnn_dynamics_model_factory(state_size,
                 dx = dx + noise_std * eps
 
             output = x + dx
+            if infer_noise_variables:
+                self.output[i] = output.detach()
             if return_samples:
                 return output
 
