@@ -231,8 +231,12 @@ def bnn_dynamics_model_factory(state_size,
                     self.eps1[i] = eps
 
                 if infer_noise_variables and i > 0:
-                    deltas = self.output[i-1] - mean
-                    eps = torch.mm(deltas, L.inverse())
+                    if x.dim() == 3:
+                        deltas = self.output[i-1][:, 0, :] - mean[0]
+                        eps = torch.mm(deltas, L[0].inverse())
+                    else:
+                        deltas = self.output[i-1] - mean
+                        eps = torch.mm(deltas, L.inverse())
                 else:
                     eps = self.eps1[i]
 
