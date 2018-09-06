@@ -355,14 +355,13 @@ def bnn_dynamics_model_factory(state_size,
             M = output.mean(dim=0)
             if encoding in (StateEncoding.FULL_COVARIANCE_MATRIX,
                             StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
-                # Compute full covariance matrix when needed.
-                jitter = 1e-12
-                while jitter < 10:
-                    try:
-                        C = _particles_covar(output, jitter)
-                        return encode(M, C=C, encoding=encoding)
-                    except RuntimeError:
-                        jitter *= 10
+                try:
+                    # Compute full covariance matrix.
+                    C = _particles_covar(output)
+                    return encode(M, C=C, encoding=encoding)
+                except RuntimeError:
+                    # Fallback to standard deviation.
+                    pass
 
             S = output.std(dim=0)
             return encode(M, S=S, encoding=encoding)
@@ -373,25 +372,20 @@ def bnn_dynamics_model_factory(state_size,
     return BNNDynamicsModel
 
 
-def _particles_covar(x, jitter=1e-12):
+def _particles_covar(x):
     """Computes the covariance of a set of particles.
 
     Args:
         x (Tensor<..., n_particles, state_size>): Particle set.
-        jitter (float): Jitter to add to the diagonals.
 
     Returns:
         Covariance matrix (Tensor<..., state_size, state_size>).
     """
     deltas = x - x.mean(dim=0)
-    I_ = jitter * torch.eye(x.shape[-1], device=x.device, dtype=x.dtype)
     if deltas.dim() == 3:
         deltas = deltas.permute(1, 0, 2)
-        C = deltas.transpose(1, 2).bmm(deltas) / (x.shape[0] - 1)
-        C += I_
-    else:
-        C = deltas.t().mm(deltas) / (x.shape[0] - 1) + I_
-    return C
+        return deltas.transpose(1, 2).bmm(deltas) / (x.shape[0] - 1)
+    return deltas.t().mm(deltas) / (x.shape[0] - 1)
 
 
 def _cycle(iterable, total):
@@ -568,7 +562,8 @@ class CDropout(BDropout):
         if resample:
             noise = torch.rand_like(x)
             resampled = True
-        elif sample_shape != self.concrete_noise.shape:
+        elif (self.concrete_noise is None or
+              sample_shape != self.concrete_noise.shape):
             sample = x.view(-1, *sample_shape)[0]
             self._update_noise(sample)
             noise = self.noise

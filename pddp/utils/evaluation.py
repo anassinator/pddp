@@ -215,10 +215,8 @@ def batch_eval_cost(cost,
         create_graph=True)
     l_z = l_zu_rep[0, :encoded_state_size].detach()
 
-    l_zuzu, = torch.autograd.grad(
-        l_zu_rep,
-        zu_rep,
-        torch.eye(zu.shape[0], **tensor_opts))
+    l_zuzu, = torch.autograd.grad(l_zu_rep, zu_rep,
+                                  torch.eye(zu.shape[0], **tensor_opts))
     l_zz = l_zuzu[:encoded_state_size, :encoded_state_size].detach()
 
     if terminal:
@@ -267,10 +265,8 @@ def batch_eval_dynamics(model,
                        zu_rep[:, encoded_state_size:], i, encoding, **kwargs)
 
     # Parallelized jacobian.
-    d_dzu, = torch.autograd.grad(
-        z_next_rep,
-        zu_rep,
-        torch.eye(encoded_state_size, **tensor_opts))
+    d_dzu, = torch.autograd.grad(z_next_rep, zu_rep,
+                                 torch.eye(encoded_state_size, **tensor_opts))
 
     z_next = z_next_rep[0].detach()
     d_dz = d_dzu[:, :encoded_state_size].detach()

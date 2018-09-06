@@ -130,15 +130,7 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
         other = C
     elif encoding == StateEncoding.UPPER_TRIANGULAR_CHOLESKY:
         C = _C_from(C, V, S)
-
-        if C.dim() == 2:
-            L = C.potrf()
-        elif C.dim() == 3:
-            # TODO: Use batch Cholesky.
-            L = torch.stack([c.potrf() for c in C])
-        else:
-            raise NotImplementedError("Expected a 2D or 3D tensor")
-
+        L = _cholesky(C)
         triu_x, triu_y = np.triu_indices(state_size)
         other = L[..., triu_x, triu_y]
     elif encoding == StateEncoding.VARIANCE_ONLY:
@@ -327,14 +319,12 @@ def decode_covar_sqrt(Z, encoding=StateEncoding.DEFAULT, state_size=None):
 
     if encoding == StateEncoding.FULL_COVARIANCE_MATRIX:
         if Z.dim() == 1:
-            return other.view(state_size, state_size).potrf()
+            C = other.view(state_size, state_size)
         elif Z.dim() == 2:
-            # TODO: Use batch Cholesky.
             C = other.view(Z.shape[0], state_size, state_size)
-            L = torch.stack([c.potrf() for c in C])
-            return L
         else:
             raise NotImplementedError("Expected a 1D or 2D tensor")
+        return _cholesky(C)
     elif encoding == StateEncoding.UPPER_TRIANGULAR_CHOLESKY:
         L = _L_from_flat_triu(other, state_size)
         return L
@@ -543,3 +533,33 @@ def _batch_diag_from_flat_triu_cholesky(X, size):
     """
     L = _L_from_flat_triu(X, size)
     return L.pow(2).sum(dim=-2)
+
+
+def _cholesky(C, jitter=1e-12, max_jitter=10):
+    """Computes the Cholesky decomposition of a matrix.
+
+    Args:
+        C (Tensor<..., state_size, state_size>): Covariance matrice(s).
+        jitter (float): Initial jitter to add to the diagonals to guarantee
+            positive-definiteness.
+        max_jitter (float): Maximum jitter term.
+
+    Returns:
+        Cholesky decomposition (Tensor<..., state_size, state_size>).
+    """
+    I = torch.eye(C.shape[-1], dtype=C.dtype, device=C.device)
+    while True:
+        try:
+            C_ = C + jitter * I
+            if C.dim() == 2:
+                return C_.potrf()
+            elif C.dim() == 3:
+                # TODO: Use batch Cholesky.
+                L = torch.stack([c.potrf() for c in C_])
+                return L
+            else:
+                raise NotImplementedError("Expected a 1D or 2D tensor")
+        except RuntimeError:
+            jitter *= 10
+            if jitter > max_jitter:
+                raise
