@@ -14,6 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Multi-vehicle rendezvous environment."""
 
+import time
 import torch
 import numpy as np
 
@@ -42,11 +43,22 @@ class RendezvousEnv(GymEnv):
             dt (float): Time difference (s). Only used if model isn't defined.
             render (bool): Whether to render the environment or not.
         """
+        self.dt = dt
         if model is None:
             model = RendezvousDynamicsModel(dt)
 
         gym_env = _RendezvousEnv(model.eval())
         super(RendezvousEnv, self).__init__(gym_env, render=render)
+
+    def apply(self, u):
+        """Applies an action to the environment.
+
+        Args:
+            u (Tensor<action_size>): Action vector.
+        """
+        super(RendezvousEnv, self).apply(u)
+        if self._render:
+            time.sleep(self.dt)
 
 
 class _RendezvousEnv(gym.Env):

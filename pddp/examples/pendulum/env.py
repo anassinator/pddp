@@ -14,6 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Pendulum environment."""
 
+import time
 import torch
 import numpy as np
 
@@ -35,7 +36,7 @@ class PendulumEnv(GymEnv):
     Note: This environment is preconstrained if the model is.
     """
 
-    def __init__(self, model=None, dt=0.05, render=False):
+    def __init__(self, model=None, dt=0.1, render=False):
         """Constructs a PendulumEnv.
 
         Args:
@@ -43,11 +44,22 @@ class PendulumEnv(GymEnv):
             dt (float): Time difference (s). Only used if model isn't defined.
             render (bool): Whether to render the environment or not.
         """
+        self.dt = dt
         if model is None:
             model = PendulumDynamicsModel(dt)
 
         gym_env = _PendulumEnv(model.eval())
         super(PendulumEnv, self).__init__(gym_env, render=render)
+
+    def apply(self, u):
+        """Applies an action to the environment.
+
+        Args:
+            u (Tensor<action_size>): Action vector.
+        """
+        super(PendulumEnv, self).apply(u)
+        if self._render:
+            time.sleep(self.dt)
 
 
 class _PendulumEnv(gym.Env):

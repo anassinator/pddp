@@ -38,12 +38,10 @@ class CartpoleCost(QRCost):
         augmented_state_size = infer_augmented_state_size(
             model.angular_indices, model.non_angular_indices)
 
-        Q_term = torch.eye(augmented_state_size)
-        Q = torch.zeros_like(Q_term)
-
         # We minimize the distance between the tip of the pole and the goal.
         # Note: we are operating on the augmented state vectors here:
         #   [x, x', theta', sin(theta), cos(theta)]
+        Q = torch.zeros(augmented_state_size, augmented_state_size)
         Q[0, 0] = 1.0
         Q[1, 1] = Q[2, 2] = 0.0
         Q[0, 3] = Q[3, 0] = pole_length

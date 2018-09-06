@@ -3,13 +3,16 @@
 from __future__ import print_function
 
 import six
-import time
 import torch
+import warnings
+import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 
 import pddp
 import pddp.examples
+
+warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
 torch.set_flush_denormal(True)
 
@@ -147,8 +150,7 @@ if __name__ == "__main__":
         on_trial=on_trial,
         max_J=0,
         max_trials=20,
-        start_from_bestU=True
-    )
+        start_from_bestU=True)
 
     plt.figure()
     plot_loss(J_hist)
@@ -162,7 +164,6 @@ if __name__ == "__main__":
     for i, u in enumerate(U):
         env.apply(u)
         Z_[i + 1] = env.get_state().encode(ENCODING)
-        time.sleep(DT)
 
     # Wait for user interaction to close everything.
     _ = six.moves.input("Press ENTER to exit")

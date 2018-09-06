@@ -3,13 +3,16 @@
 from __future__ import print_function
 
 import six
-import time
 import torch
+import warnings
+import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 
 import pddp
 import pddp.examples
+
+warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
 torch.set_flush_denormal(True)
 
@@ -130,7 +133,7 @@ if __name__ == "__main__":
         model,
         cost,
         training_opts={
-            "n_iter": 2000,
+            "n_iter": 1000,
             "learning_rate": 1e-3,
         },
     )
@@ -159,7 +162,6 @@ if __name__ == "__main__":
     for i, u in enumerate(U):
         env.apply(u)
         Z_[i + 1] = env.get_state().encode(ENCODING)
-        time.sleep(DT)
 
     # Wait for user interaction to close everything.
     _ = six.moves.input("Press ENTER to exit")
