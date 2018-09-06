@@ -147,6 +147,7 @@ if __name__ == "__main__":
         on_trial=on_trial,
         max_J=0,
         max_trials=20,
+        start_from_bestU=False
     )
 
     plt.figure()
