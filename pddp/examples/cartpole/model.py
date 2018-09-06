@@ -35,7 +35,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         theta: 0 is pointing up and increasing clockwise.
     """
 
-    def __init__(self, dt, mc=0.5, mp=0.5, l=0.5, g=9.80665):
+    def __init__(self, dt, mc=0.5, mp=0.5, l=0.5, mu=0.1, g=-9.80665):
         """Constructs a CartpoleDynamicsModel.
 
         Args:
@@ -43,6 +43,7 @@ class CartpoleDynamicsModel(DynamicsModel):
             mc (float): Cart mass [kg].
             mp (float): Pendulum mass [kg].
             l (float): Pendulum length [m].
+            mu (float): Coefficient of friction [dimensionless].
             g (float): Gravity acceleration [m/s^2].
         """
         super(CartpoleDynamicsModel, self).__init__()
@@ -50,6 +51,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         self.mc = Parameter(torch.tensor(mc), requires_grad=True)
         self.mp = Parameter(torch.tensor(mp), requires_grad=True)
         self.l = Parameter(torch.tensor(l), requires_grad=True)
+        self.mu = Parameter(torch.tensor(mu), requires_grad=True)
         self.g = Parameter(torch.tensor(g), requires_grad=True)
 
     @classproperty
@@ -100,6 +102,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         mc = self.mc
         mp = self.mp
         l = self.l
+        mu = self.mu
         g = self.g
 
         mean = decode_mean(z, encoding)
@@ -111,20 +114,17 @@ class CartpoleDynamicsModel(DynamicsModel):
         theta_dot = mean[..., 3]
         F = u.flatten()
 
-        # Define dynamics model as per Razvan V. Florian's
-        # "Correct equations for the dynamics of the cart-pole system".
-        # Friction is neglected.
-
-        # Eq. (23)
         sin_theta = theta.sin()
         cos_theta = theta.cos()
-        temp = (F + mp * l * theta_dot**2 * sin_theta) / (mc + mp)
-        numerator = g * sin_theta - cos_theta * temp
-        denominator = l * (4.0 / 3.0 - mp * cos_theta**2 / (mc + mp))
-        theta_dot_dot = numerator / denominator
 
-        # Eq. (24)
-        x_dot_dot = temp - mp * l * theta_dot_dot * cos_theta / (mc + mp)
+        a0 = mp * l * theta_dot**2 * sin_theta
+        a1 = g * sin_theta
+        a2 = F - mu * x_dot
+        a3 = 4 * (mc + mp) - 3 * mp * cos_theta**2
+
+        theta_dot_dot = -3 * (a0 * cos_theta + 2 * (
+            (mc + mp) * a1 + a2 * cos_theta)) / (l * a3)
+        x_dot_dot = (2 * a0 + 3 * mp * a1 * cos_theta + 4 * a2) / a3
 
         mean = torch.stack(
             [
