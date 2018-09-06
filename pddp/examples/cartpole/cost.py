@@ -48,7 +48,6 @@ class CartpoleCost(QRCost):
         Q[1, 1] = Q[2, 2] = 0.0
         Q[0, 3] = Q[3, 0] = pole_length
         Q[3, 3] = Q[4, 4] = pole_length**2
-        Q_term = Q
         R = 0.1 * torch.eye(model.action_size)
 
         # Goal is not all zeroes after augmenting the state.
@@ -56,7 +55,7 @@ class CartpoleCost(QRCost):
             torch.zeros(model.state_size), model.angular_indices,
             model.non_angular_indices)
 
-        super(CartpoleCost, self).__init__(Q, R, Q_term=Q_term, x_goal=x_goal)
+        super(CartpoleCost, self).__init__(Q, R, x_goal=x_goal)
 
     def forward(self,
                 z,
