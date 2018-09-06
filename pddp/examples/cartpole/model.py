@@ -27,7 +27,7 @@ from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
 
 class CartpoleDynamicsModel(DynamicsModel):
 
-    """Friction-less cartpole dynamics model.
+    """Cartpole dynamics model.
 
     Note:
         state: [x, x', theta, theta']

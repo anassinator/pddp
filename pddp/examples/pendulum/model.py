@@ -35,7 +35,7 @@ class PendulumDynamicsModel(DynamicsModel):
         theta: 0 is pointing up and increasing counter-clockwise.
     """
 
-    def __init__(self, dt, m=1.0, l=0.5, g=9.80665):
+    def __init__(self, dt, m=1.0, l=1.0, mu=0.1, g=-9.80665):
         """Constructs PendulumDynamicsModel.
 
         Args:
@@ -48,6 +48,7 @@ class PendulumDynamicsModel(DynamicsModel):
         self.dt = Parameter(torch.tensor(dt), requires_grad=False)
         self.m = Parameter(torch.tensor(m), requires_grad=True)
         self.l = Parameter(torch.tensor(l), requires_grad=True)
+        self.mu = Parameter(torch.tensor(mu), requires_grad=True)
         self.g = Parameter(torch.tensor(g), requires_grad=True)
 
     @classproperty
@@ -97,6 +98,7 @@ class PendulumDynamicsModel(DynamicsModel):
         dt = self.dt
         m = self.m
         l = self.l
+        mu = self.mu
         g = self.g
 
         mean = decode_mean(z, encoding)
@@ -107,15 +109,14 @@ class PendulumDynamicsModel(DynamicsModel):
         torque = u.flatten()
 
         # Define acceleration.
-        theta_dot_dot = (-3.0 * g / (2 * l) * (theta + np.pi).sin() +
-                         3.0 / (m * l**2) * torque)
-
-        # Constrain the angular velocity.
-        next_theta_dot = theta_dot + theta_dot_dot.view(theta_dot.shape) * dt
+        temp = m * l
+        theta_dot_dot = torque - mu * theta_dot - 0.5 * temp * g * theta.sin()
+        theta_dot_dot = 3 * theta_dot_dot / (temp * l)
 
         mean = torch.stack(
             [
                 theta + theta_dot.view(theta.shape) * dt,
-                next_theta_dot,
-            ], dim=-1)
+                theta_dot + theta_dot_dot.view(theta_dot.shape) * dt,
+            ],
+            dim=-1)
         return encode(mean, V=var, encoding=encoding)
