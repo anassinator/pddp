@@ -515,6 +515,7 @@ class CDropout(BDropout):
 
         # We need to constrain p to [0, 1], so we train logit(p).
         self.logit_p = Parameter(-torch.log(self.p.reciprocal() - 1.0))
+        self.concrete_noise = None
 
     def regularization(self, weight, bias):
         """Computes the regularization cost.
@@ -539,6 +540,16 @@ class CDropout(BDropout):
         """
         self.noise.data = torch.rand_like(x)
 
+    def _update_concrete_noise(self, noise):
+        """Updates the concrete dropout masks.
+
+        Args:
+            noise (Tensor): Input.
+        """
+        self.p.data = self.logit_p.sigmoid()
+        concrete_p = self.logit_p + noise.log() - (1 - noise).log()
+        self.concrete_noise = (concrete_p / self.temperature).sigmoid()
+
     def forward(self, x, resample=False, mask_dims=2, **kwargs):
         """Computes the concrete dropout.
 
@@ -553,21 +564,24 @@ class CDropout(BDropout):
         """
         sample_shape = x.shape[-mask_dims:]
         noise = self.noise
+        resampled = False
         if resample:
             noise = torch.rand_like(x)
-        elif sample_shape != noise.shape:
+            resampled = True
+        elif sample_shape != self.concrete_noise.shape:
             sample = x.view(-1, *sample_shape)[0]
             self._update_noise(sample)
             noise = self.noise
+            resampled = True
 
-        self.p.data = self.logit_p.sigmoid()
-        concrete_p = self.logit_p + noise.log() - (1 - noise).log()
-        concrete_noise = (concrete_p / self.temperature).sigmoid()
-
-        if not self.training:
+        if self.training:
+            self._update_concrete_noise(noise)
+            concrete_noise = self.concrete_noise
+        else:
+            if resampled:
+                self._update_concrete_noise(noise)
             # We never need these gradients in evaluation mode.
-            concrete_noise = concrete_noise.detach()
-
+            concrete_noise = self.concrete_noise.detach()
         return x * concrete_noise
 
     def extra_repr(self):
