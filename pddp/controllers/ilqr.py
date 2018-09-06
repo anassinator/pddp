@@ -253,7 +253,7 @@ def forward(z0,
 
     # Terminal cost.
     z = Z[-1].detach().requires_grad_()
-    L[-1], L_z[-1], _, L_zz[-1], _, _ = eval_cost(
+    L[-1], L_z[-1], _, L_zz[-1], _, _ = eval_cost_fn(
         cost, z, None, i, terminal=True, encoding=encoding, **cost_opts)
 
     Z.detach_()
