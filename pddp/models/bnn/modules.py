@@ -31,6 +31,8 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from ..base import DynamicsModel
 from .losses import gaussian_log_likelihood
+
+from ...utils.constraint import constrain
 from ...utils.classproperty import classproperty
 from ...utils.encoding import (StateEncoding, decode_mean, decode_std,
                                decode_covar_sqrt, encode)
@@ -43,6 +45,8 @@ def bnn_dynamics_model_factory(state_size,
                                hidden_features,
                                angular_indices=None,
                                non_angular_indices=None,
+                               constrain_min=None,
+                               constrain_max=None,
                                particles=False,
                                **kwargs):
     """A BNNDynamicsModel factory.
@@ -54,6 +58,8 @@ def bnn_dynamics_model_factory(state_size,
         angular_indices (Tensor<n>): Column indices of angular states.
         non_angular_indices (Tensor<m>): Complementary indices of
             `angular_indices`.
+        constrain_min (Tensor<action_size>): Minimum action bounds.
+        constrain_max (Tensor<action_size>): Maximum action bounds.
         particles (bool): Whether to construct a model that deals with
             particles directly instead or not.
         **kwargs (dict): Additional key-word arguments to pass to
@@ -67,6 +73,8 @@ def bnn_dynamics_model_factory(state_size,
     if angular:
         augmented_state_size = infer_augmented_state_size(
             angular_indices, non_angular_indices)
+
+    should_constrain = constrain_min is not None and constrain_max is not None
 
     class ParticlesBNNDynamicsModel(DynamicsModel):
 
@@ -105,6 +113,11 @@ def bnn_dynamics_model_factory(state_size,
             """Resamples model."""
             self.eps_out = {}
             self.model.resample()
+
+        def _constrain(self, u):
+            if should_constrain:
+                return constrain(u, constrain_min, constrain_max)
+            return u
 
         def _normalize_input(self, x_):
             return (x_ - self.X_mean) * self.X_std_inv
@@ -145,6 +158,7 @@ def bnn_dynamics_model_factory(state_size,
             if angular:
                 X = augment_state(X, angular_indices, non_angular_indices)
 
+            U = self._constrain(U)
             X_ = torch.cat([X, U], dim=-1)
             N = X_.shape[0]
 
@@ -211,6 +225,7 @@ def bnn_dynamics_model_factory(state_size,
             else:
                 X_ = X
 
+            u = self._constrain(u)
             u_ = u.expand(n_particles, *u.shape)
             if u_.dim() == 3:
                 u_ = u_.permute(1, 0, 2)
