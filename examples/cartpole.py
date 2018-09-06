@@ -132,7 +132,7 @@ if __name__ == "__main__":
         model,
         cost,
         training_opts={
-            "n_iter": 2000,
+            "n_iter": 1000,
             "learning_rate": 1e-3,
         },
     )
@@ -147,7 +147,7 @@ if __name__ == "__main__":
         on_trial=on_trial,
         max_J=0,
         max_trials=20,
-        start_from_bestU=False
+        start_from_bestU=True
     )
 
     plt.figure()
