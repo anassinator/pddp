@@ -363,14 +363,14 @@ def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0):
             warnings.warn("singular matrix: falling back to pseudo-inverse")
             Q_uu_inv = Q_uu.pinverse()
             k[i] = -Q_uu_inv.matmul(Q_u)
-            K[i] = -Q_uu_inv.matmul(Q_uz)
+            K[i] = -Q_uu_inv.mm(Q_uz)
 
         V_z = Q_z + K[i].t().matmul(Q_u)
-        V_z += K[i].t().matmul(Q_uu).matmul(k[i])
+        V_z += K[i].t().mm(Q_uu).matmul(k[i])
         V_z += Q_uz.t().matmul(k[i])
 
-        V_zz = Q_zz + K[i].t().matmul(Q_uu).matmul(K[i])
-        V_zz += K[i].t().matmul(Q_uz) + Q_uz.t().matmul(K[i])
+        V_zz = Q_zz + K[i].t().mm(Q_uu).mm(K[i])
+        V_zz += K[i].t().mm(Q_uz) + Q_uz.t().mm(K[i])
         V_zz = 0.5 * (V_zz + V_zz.t())  # To maintain symmetry.
 
     return k, K
