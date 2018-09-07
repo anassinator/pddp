@@ -107,15 +107,15 @@ if __name__ == "__main__":
 
     def on_iteration(iteration, Z, U, J_opt, accepted, converged):
         J_hist.append(J_opt.detach().numpy())
-
-        for i in range(model.state_size):
-            plt.subplot(5, 1, i + 2)
-            plt.cla()
-            if i == 0:
-                plt.title("Iteration {}".format(iteration + 1))
-            if i == model.state_size:
-                plt.xlabel("Time step")
-            plot_path(Z, indices=[i], legend=False)
+        if iteration % 10 == 9 or iteration == 0:
+            for i in range(model.state_size):
+                plt.subplot(5, 1, i + 2)
+                plt.cla()
+                if i == 0:
+                    plt.title("Iteration {}".format(iteration + 1))
+                if i == model.state_size:
+                    plt.xlabel("Time step")
+                plot_path(Z, indices=[i], legend=False)
 
     cost = pddp.examples.cartpole.CartpoleCost()
     env = pddp.examples.cartpole.CartpoleEnv(dt=DT, render=RENDER)
