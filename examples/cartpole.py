@@ -134,6 +134,10 @@ if __name__ == "__main__":
         env,
         model,
         cost,
+        model_opts={
+            "use_predicted_std": False,
+            "infer_noise_variables": True
+        },
         training_opts={
             "n_iter": 1000,
             "learning_rate": 1e-3,
