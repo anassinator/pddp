@@ -96,7 +96,7 @@ class QRCost(Cost):
             # Batch compute trace.
             C = decode_covar(z, encoding)
             CQ = C*Q.t()
-            trace = CQ.sum(range(1, C.dim())) if dims > 1 else CQ.sum()
+            trace = CQ.sum(torch.range(1, C.dim())) if dims > 1 else CQ.sum()
             cost += trace
 
         return cost
