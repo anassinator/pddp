@@ -9,12 +9,14 @@ ENVS = [
     cartpole.CartpoleEnv,
     pendulum.PendulumEnv,
     rendezvous.RendezvousEnv,
+    double_cartpole.DoubleCartpoleEnv,
 ]
 
 MODELS = [
     cartpole.CartpoleDynamicsModel,
     pendulum.PendulumDynamicsModel,
     rendezvous.RendezvousDynamicsModel,
+    double_cartpole.DoubleCartpoleDynamicsModel,
 ]
 
 
