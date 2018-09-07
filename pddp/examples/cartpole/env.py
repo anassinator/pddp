@@ -114,7 +114,7 @@ class _CartPoleEnv(gym.Env):
 
     def reset(self):
         self.state = np.array([0, 0, np.pi, 0])
-        self.state += 1e-2 * np.random.random(self.state.shape)
+        self.state += 1e-2 * np.random.randn(*self.state.shape)
         return self.state
 
     def render(self, mode="human", N=1):

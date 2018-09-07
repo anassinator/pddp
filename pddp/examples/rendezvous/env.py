@@ -105,7 +105,7 @@ class _RendezvousEnv(gym.Env):
 
     def reset(self):
         self.state = np.array([-10.0, -10.0, 10.0, 10.0, 0.0, -5.0, 5.0, 0.0])
-        self.state += 1e-2 * np.random.random(self.state.shape)
+        self.state += 1e-2 * np.random.randn(*self.state.shape)
         return self.state
 
     def render(self, mode="human"):
