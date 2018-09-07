@@ -82,6 +82,7 @@ class PDDPController(iLQRController):
             max_dataset_size=1000,
             start_from_bestU=True,
             resample_model=True,
+            apply_feedback_control=False,
             **kwargs):
         """Determines the optimal path to minimize the cost.
 
@@ -134,6 +135,7 @@ class PDDPController(iLQRController):
                 U (Tensor<N, action_size>): Optimal action path.
         """
         U = U.detach()
+        K = None
         bestU = U
         bestJ = np.inf
         N, action_size = U.shape
@@ -184,7 +186,7 @@ class PDDPController(iLQRController):
                         changed = False
 
                     # Backward pass.
-                    k, K = backward(
+                    k, K_new = backward(
                         Z,
                         F_z,
                         F_u,
@@ -200,10 +202,10 @@ class PDDPController(iLQRController):
                     for alpha in alphas:
                         if linearize_dynamics:
                             Z_new, U_new = _linear_control_law(
-                                Z, U, F_z, F_u, k, K, alpha)
+                                Z, U, F_z, F_u, k, K_new, alpha)
                         else:
-                            Z_new, U_new = _control_law(self.model, Z, U, k, K,
-                                                        alpha, encoding,
+                            Z_new, U_new = _control_law(self.model, Z, U, k,
+                                                        K_new, alpha, encoding,
                                                         self._model_opts)
 
                         J_new = _trajectory_cost(self.cost, Z_new, U_new,
@@ -219,6 +221,7 @@ class PDDPController(iLQRController):
                             J_opt = J_new
                             Z = Z_new
                             U = U_new
+                            K = K_new
                             changed = True
 
                             # Decrease regularization term.
@@ -269,11 +272,15 @@ class PDDPController(iLQRController):
                 break
 
             # Sample new data.
+            if apply_feedback_control:
+                controls = U if K is None else (U, (K, Z))
+            else:
+                controls = U
             dataset, U, J = _train(
-                self.env, self.model, self.cost, U, n_sample_trajectories,
-                dataset, concatenate_datasets, max_dataset_size, quiet,
-                on_trial, total_trials, sampling_noise, self._training_opts,
-                self._cost_opts)
+                self.env, self.model, self.cost, controls,
+                n_sample_trajectories, dataset, concatenate_datasets,
+                max_dataset_size, quiet, on_trial, total_trials, sampling_noise,
+                self._training_opts, self._cost_opts, encoding)
             total_trials += n_sample_trajectories
 
             if J < bestJ:
@@ -283,7 +290,7 @@ class PDDPController(iLQRController):
             if start_from_bestU:
                 U = bestU
 
-        return Z, U
+        return Z, U, K
 
 
 @torch.no_grad()
@@ -300,14 +307,19 @@ def _train(env,
            n_trials=0,
            noise=1e-2,
            training_opts={},
-           cost_opts={}):
+           cost_opts={},
+           encoding=StateEncoding.DEFAULT):
     model.train()
+    if type(U) is tuple or type(U) is list:
+        U, feedback_control = U
+    else:
+        feedback_control = None
 
     # Sample new trajectories.
     Us = U.repeat(n_trajectories, 1, 1)
     Us[1:] += noise * torch.randn_like(Us[1:])
     dataset_, sample_losses = _sample(env, Us, cost, quiet, on_trial, n_trials,
-                                      cost_opts)
+                                      cost_opts, feedback_control, encoding)
 
     # Update dataset.
     if concatenate_datasets:
@@ -325,8 +337,15 @@ def _train(env,
 
 
 @torch.no_grad()
-def _sample(env, Us, cost, quiet=False, on_trial=None, n_trials=0,
-            cost_opts={}):
+def _sample(env,
+            Us,
+            cost,
+            quiet=False,
+            on_trial=None,
+            n_trials=0,
+            cost_opts={},
+            feedback_control=None,
+            encoding=StateEncoding.DEFAULT):
     n_sample_trajectories, N, _ = Us.shape
     N_ = n_sample_trajectories * N
 
@@ -335,6 +354,10 @@ def _sample(env, Us, cost, quiet=False, on_trial=None, n_trials=0,
     U = torch.empty(N_, env.action_size, **tensor_opts)
     dX = torch.empty(N_, env.state_size, **tensor_opts)
     L = torch.zeros(n_sample_trajectories, **tensor_opts)
+    if feedback_control is not None:
+        K, Z = feedback_control
+    else:
+        K, Z = None, None
 
     with trange(Us.shape[0], desc="TRIALS", disable=quiet) as pbar:
         for trajectory in pbar:
@@ -342,8 +365,11 @@ def _sample(env, Us, cost, quiet=False, on_trial=None, n_trials=0,
             base_i = N * trajectory
             for i, u in enumerate(current_U):
                 u = u.detach()
-
                 x = env.get_state().mean().to(**tensor_opts)
+                if K is not None and Z is not None:
+                    z = env.get_state().encode(encoding).to(**tensor_opts)
+                    dz = z - Z[i]
+                    u = u + K[i].matmul(dz)
                 env.apply(u)
                 x_next = env.get_state().mean().to(**tensor_opts)
 

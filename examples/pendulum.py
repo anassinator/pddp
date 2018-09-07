@@ -139,7 +139,7 @@ if __name__ == "__main__":
     )
 
     controller.train()
-    Z, U = controller.fit(
+    Z, U, K = controller.fit(
         U,
         encoding=ENCODING,
         n_iterations=50,
@@ -160,6 +160,8 @@ if __name__ == "__main__":
     Z_ = torch.empty_like(Z)
     Z_[0] = env.get_state().encode(ENCODING)
     for i, u in enumerate(U):
+        dz = Z_[i] - Z[i]
+        u = u + K[i].matmul(dz)
         env.apply(u)
         Z_[i + 1] = env.get_state().encode(ENCODING)
 

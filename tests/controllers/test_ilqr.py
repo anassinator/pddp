@@ -95,7 +95,7 @@ def test_fit(env_class, model_class, cost_class, encoding, N):
     _, U, model, cost = _setup(model_class, cost_class, encoding, N)
     controller = iLQRController(env, model, cost)
 
-    Z, U = controller.fit(U, encoding=encoding)
+    Z, U, K = controller.fit(U, encoding=encoding)
 
 
 @pytest.mark.parametrize("N", [1, 3])

@@ -125,13 +125,14 @@ class iLQRController(Controller):
                     changed = False
 
                 # Backward pass.
-                k, K = backward(
+                k, K_new = backward(
                     Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=self._mu)
 
                 # Backtracking line search.
                 for alpha in alphas:
-                    Z_new, U_new = _control_law(self.model, Z, U, k, K, alpha,
-                                                encoding, self._model_opts)
+                    Z_new, U_new = _control_law(self.model, Z, U, k, K_new,
+                                                alpha, encoding,
+                                                self._model_opts)
                     J_new = _trajectory_cost(self.cost, Z_new, U_new, encoding,
                                              self._cost_opts)
 
@@ -143,6 +144,7 @@ class iLQRController(Controller):
                         J_opt = J_new
                         Z = Z_new
                         U = U_new
+                        K = K_new
                         changed = True
 
                         # Decrease regularization term.
@@ -175,7 +177,7 @@ class iLQRController(Controller):
                 if converged:
                     break
 
-        return Z, U
+        return Z, U, K
 
 
 def forward(z0,
@@ -416,7 +418,7 @@ def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
         z_new = Z_new[i]
 
         dz = z_new - z
-        du = alpha * (k[i] + K[i].matmul(dz))
+        du = alpha * k[i] + K[i].matmul(dz)
         dz_ = F_z[i].matmul(dz) + F_u[i].matmul(du)
 
         Z_new[i + 1] = Z[i + 1] + dz_
