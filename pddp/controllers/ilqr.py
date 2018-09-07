@@ -109,6 +109,7 @@ class iLQRController(Controller):
 
         # Get initial state distribution.
         z0 = self.env.get_state().encode(encoding).detach().to(**tensor_opts)
+        K = torch.zeros(N, action_size, z0.shape[-1], **tensor_opts)
 
         changed = True
         converged = False

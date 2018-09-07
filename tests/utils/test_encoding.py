@@ -20,12 +20,12 @@ STATE_ENCODINGS = [
 def test_infer_encoded_state_size(encoding, size):
     x = GaussianVariable.random(5)
     z = x.encode(encoding)
-    assert infer_encoded_state_size(x, encoding) == size
-    assert infer_encoded_state_size(x, encoding) == z.shape[0]
+    assert infer_encoded_state_size(x.shape[-1], encoding) == size
+    assert infer_encoded_state_size(x.shape[-1], encoding) == z.shape[0]
 
     X = torch.stack([torch.randn(5) for _ in range(3)])
-    assert infer_encoded_state_size(X, encoding) == size
-    assert infer_encoded_state_size(X, encoding) == z.shape[0]
+    assert infer_encoded_state_size(X.shape[-1], encoding) == size
+    assert infer_encoded_state_size(X.shape[-1], encoding) == z.shape[0]
 
 
 @pytest.mark.parametrize("encoding", STATE_ENCODINGS)
@@ -33,10 +33,10 @@ def test_infer_state_sze(encoding):
     N = 5
     x = GaussianVariable.random(N)
     z = x.encode(encoding)
-    assert infer_state_size(z, encoding) == N
+    assert infer_state_size(z.shape[-1], encoding) == N
 
     Z = torch.stack([z for _ in range(20)])
-    assert infer_state_size(Z, encoding) == N
+    assert infer_state_size(Z.shape[-1], encoding) == N
 
 
 @pytest.mark.parametrize("encoding", STATE_ENCODINGS)
@@ -90,7 +90,7 @@ def test_encode(encoding):
     V = torch.stack([x.var() for x in X])
     S = torch.stack([x.std() for x in X])
 
-    encoded_state_size = infer_encoded_state_size(M, encoding)
+    encoded_state_size = infer_encoded_state_size(M.shape[-1], encoding)
 
     Zs = [
         (encode(M, C=C, encoding=encoding), C, True),

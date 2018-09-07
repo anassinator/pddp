@@ -193,14 +193,3 @@ class DoubleCartpoleDynamicsModel(DynamicsModel):
             dim=-1)
 
         return encode(mean, V=var, encoding=encoding)
-
-
-def rk4(f, z, u, dt, n):
-    h = dt / n
-    for i in range(n):
-        k1 = h * f(z, u)
-        k2 = h * f(z + 0.5 * k1, u)
-        k3 = h * f(z + 0.5 * k2, u)
-        k4 = h * f(z + k3, u)
-        z = z + (k1 + k2 + k2 + k3 + k3 + k4) / 6
-    return z

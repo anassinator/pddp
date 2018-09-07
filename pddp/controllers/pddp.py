@@ -28,8 +28,8 @@ from torch.utils.data import TensorDataset
 from .ilqr import (iLQRController, forward, backward, Q, _linear_control_law,
                    _control_law, _trajectory_cost)
 
-from ..utils.encoding import StateEncoding, decode_var
 from ..utils.evaluation import eval_cost, eval_dynamics
+from ..utils.encoding import StateEncoding, decode_var, infer_encoded_state_size
 
 
 class PDDPController(iLQRController):
@@ -135,11 +135,13 @@ class PDDPController(iLQRController):
                 U (Tensor<N, action_size>): Optimal action path.
         """
         U = U.detach()
-        K = None
         bestU = U
         bestJ = np.inf
         N, action_size = U.shape
+        encoded_state_size = infer_encoded_state_size(self.model.state_size,
+                                                      encoding)
         tensor_opts = {"dtype": U.dtype, "device": U.device}
+        K = torch.zeros(N, action_size, encoded_state_size, **tensor_opts)
 
         # Build initial dataset.
         dataset = None

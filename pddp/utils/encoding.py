@@ -41,17 +41,16 @@ class StateEncoding(object):
     IGNORE_UNCERTAINTY = 4
 
 
-def infer_encoded_state_size(x, encoding=StateEncoding.DEFAULT):
-    """Computes the expected encoded state size from a state distribution.
+def infer_encoded_state_size(state_size, encoding=StateEncoding.DEFAULT):
+    """Computes the expected encoded state size of a state distribution.
 
     Args:
-        x (Tensor<state_size>): Mean state distribution.
+        state_size (int): State size.
         encoding (int): StateEncoding enum.
 
     Returns:
         Encoded state size (int).
     """
-    state_size = x.shape[-1]
     if encoding == StateEncoding.FULL_COVARIANCE_MATRIX:
         return state_size + state_size**2
     elif encoding == StateEncoding.UPPER_TRIANGULAR_CHOLESKY:
@@ -66,17 +65,17 @@ def infer_encoded_state_size(x, encoding=StateEncoding.DEFAULT):
         raise NotImplementedError("Unknown StateEncoding: {}".format(encoding))
 
 
-def infer_state_size(z, encoding=StateEncoding.DEFAULT):
+def infer_state_size(encoded_state_size, encoding=StateEncoding.DEFAULT):
     """Computes the original state size from an encoded state.
 
     Args:
-        z (Tensor<..., n>): Encoded state vector.
+        encoded_state_size (int): Encoded state size.
         encoding (int): StateEncoding enum.
 
     Returns:
         State size (int).
     """
-    n = z.shape[-1]
+    n = encoded_state_size
     if encoding == StateEncoding.FULL_COVARIANCE_MATRIX:
         # n = state_size + state_size^2
         return int(0.5 * (-1 + np.sqrt(1 + 4 * n)))
@@ -116,7 +115,6 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
         "dtype": M.dtype,
         "requires_grad": M.requires_grad
     }
-    encoded_state_size = infer_encoded_state_size(M, encoding)
 
     if encoding == StateEncoding.FULL_COVARIANCE_MATRIX:
         C = _C_from(C, V, S)
@@ -382,7 +380,7 @@ def _split(Z, encoding=StateEncoding.DEFAULT, state_size=None):
     """
     if state_size is None:
         # Infer the state size.
-        state_size = infer_state_size(Z, encoding)
+        state_size = infer_state_size(Z.shape[-1], encoding)
 
     n_other = Z.shape[-1] - state_size
     if n_other > 0:
