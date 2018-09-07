@@ -15,6 +15,6 @@
 """Cost functions."""
 
 from .base import AggregateCost, Cost
-from .quadratic import QRCost
+from .quadratic import QRCost, SaturatingQRCost
 
 __all__ = ["AggregateCost", "Cost", "QRCost"]

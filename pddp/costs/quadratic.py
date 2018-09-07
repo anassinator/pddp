@@ -81,22 +81,110 @@ class QRCost(Cost):
             The expectation of the cost (Tensor<...>).
         """
         Q = self.Q_term if terminal else self.Q
-
+        dims = z.dim()
         mean = decode_mean(z, encoding)
-        x_ = mean - self.x_goal
-        y = x_.matmul(Q).matmul(x_.t() if x_.dim() > 1 else x_)
-        cost = y.diag() if x_.dim() > 1 else y
+        dx = mean - self.x_goal
+        dxQ = dx.matmul(Q)
+        cost = (dxQ*dx).sum(-1) if dims > 1 else dxQ.matmul(dx)
 
         if not terminal:
-            u_ = (u - self.u_goal)
-            v = u_.matmul(self.R).matmul(u_.t() if u_.dim() > 1 else u_)
-            cost += v.diag() if u_.dim() > 1 else v
+            du = u - self.u_goal
+            duR = du.matmul(self.R)
+            cost += (duR*du).sum(-1) if dims > 1 else duR.matmul(du)
 
         if encoding != StateEncoding.IGNORE_UNCERTAINTY:
             # Batch compute trace.
-            covar = decode_covar(z, encoding)
-            Y = Q.matmul(covar)
-            ix, iy = np.diag_indices(covar.shape[-1])
-            cost += Y[..., ix, iy].sum(dim=-1)
+            C = decode_covar(z, encoding)
+            CQ = C*Q.t()
+            trace = CQ.sum(range(1, C.dim())) if dims > 1 else CQ.sum()
+            cost += trace
+
+        return cost
+
+
+class SaturatingQRCost(Cost):
+
+    r"""Saturating quadratic cost function.
+    """
+
+    def __init__(self,
+                 Q,
+                 R,
+                 Q_term=None,
+                 x_goal=torch.tensor(0.0),
+                 u_goal=torch.tensor(0.0)):
+        """Constructs a QRCost.
+
+        Args:
+            Q (Tensor<state_size, state_size>): Q matrix.
+            R (Tensor<action_size, action_size>): R matrix.
+            Q_term (Tensor<state_size, state_size>): Terminal Q matrix,
+                default: Q.
+            x_goal (Tensor<state_size>): Goal state, default: 0.0.
+            u_goal (Tensor<action_size>): Goal action, default: 0.0.
+        """
+        super(SaturatingQRCost, self).__init__()
+        Q_term = Q if Q_term is None else Q_term
+
+        self.Q = torch.nn.Parameter(Q, requires_grad=False)
+        self.R = torch.nn.Parameter(R, requires_grad=False)
+        self.Q_term = torch.nn.Parameter(Q_term, requires_grad=False)
+
+        self.x_goal = torch.nn.Parameter(x_goal, requires_grad=False)
+        self.u_goal = torch.nn.Parameter(u_goal, requires_grad=False)
+
+    def forward(self,
+                z,
+                u,
+                i,
+                terminal=False,
+                encoding=StateEncoding.DEFAULT,
+                **kwargs):
+        """Cost function.
+
+        Args:
+            z (Tensor<..., encoded_state_size): Encoded state distribution.
+            u (Tensor<..., action_size>): Action vector.
+            i (Tensor<...>): Time index.
+            terminal (bool): Whether the cost is terminal. If so, u should be
+                `None`.
+            encoding (int): StateEncoding enum.
+
+        Returns:
+            The expectation of the cost (Tensor<...>).
+        """
+        Q = self.Q_term if terminal else self.Q
+        dims = z.dim()
+        mean = decode_mean(z, encoding)
+        dx = mean - self.x_goal
+
+        if encoding != StateEncoding.IGNORE_UNCERTAINTY:
+            # mean cost under normal distributed inputs
+            C = decode_covar(z, encoding)
+            CQ = C.bmm(Q.expand(C.shape[0], -1, -1)) if dims > 1 else C.mm(Q)
+            I_ = torch.eye(dx.shape[-1])
+            IpCQ = I_ + CQ
+            if dims > 1:
+                S1 = torch.gesv(
+                    Q.t().expand(C.shape[0], -1, -1),
+                    IpCQ.transpose(-1, -2))[0].transpose(-1, -2)
+                detIpCQ = torch.stack([m.det().sqrt() for m in IpCQ])
+                S1dx = S1.bmm(dx.unsqueeze(-1)).squeeze()
+                cost = 1.0 - (-0.5*(dx*S1dx).sum(-1)).exp()/detIpCQ
+            else:
+                S1 = Q.mm(IpCQ.inverse())
+                detIpCQ = IpCQ.det().sqrt()
+                S1dx = S1.matmul(dx)
+                cost = 1.0 - (-0.5*dx.matmul(S1dx)).exp()/detIpCQ
+        else:
+            dx = mean - self.x_goal
+            dxQ = dx.matmul(Q)
+            qcost = (dxQ*dx).sum(-1) if dims > 1 else dxQ.matmul(dx)
+            cost = 1.0 - (-0.5*qcost).exp()
+
+        if not terminal:
+            du = u - self.u_goal
+            duR = du.matmul(self.R)
+            cost += (duR*du).sum(-1) if dims > 1 else duR.matmul(du)
 
         return cost
