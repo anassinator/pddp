@@ -85,18 +85,18 @@ class QRCost(Cost):
         mean = decode_mean(z, encoding)
         dx = mean - self.x_goal
         dxQ = dx.matmul(Q)
-        cost = (dxQ*dx).sum(-1) if dims > 1 else dxQ.matmul(dx)
+        cost = (dxQ * dx).sum(-1) if dims > 1 else dxQ.matmul(dx)
 
         if not terminal:
             du = u - self.u_goal
             duR = du.matmul(self.R)
-            cost += (duR*du).sum(-1) if dims > 1 else duR.matmul(du)
+            cost += (duR * du).sum(-1) if dims > 1 else duR.matmul(du)
 
         if encoding != StateEncoding.IGNORE_UNCERTAINTY:
             # Batch compute trace.
             C = decode_covar(z, encoding)
-            CQ = C*Q.t()
-            trace = CQ.sum(torch.range(1, C.dim())) if dims > 1 else CQ.sum()
+            CQ = C * Q.t()
+            trace = CQ.sum(list(range(1, C.dim()))) if dims > 1 else CQ.sum()
             cost += trace
 
         return cost
@@ -165,26 +165,25 @@ class SaturatingQRCost(Cost):
             I_ = torch.eye(dx.shape[-1])
             IpCQ = I_ + CQ
             if dims > 1:
-                S1 = torch.gesv(
-                    Q.t().expand(C.shape[0], -1, -1),
-                    IpCQ.transpose(-1, -2))[0].transpose(-1, -2)
+                S1 = torch.gesv(Q.t().expand(C.shape[0], -1, -1),
+                                IpCQ.transpose(-1, -2))[0].transpose(-1, -2)
                 detIpCQ = torch.stack([m.det().sqrt() for m in IpCQ])
                 S1dx = S1.bmm(dx.unsqueeze(-1)).squeeze()
-                cost = 1.0 - (-0.5*(dx*S1dx).sum(-1)).exp()/detIpCQ
+                cost = 1.0 - (-0.5 * (dx * S1dx).sum(-1)).exp() / detIpCQ
             else:
                 S1 = Q.mm(IpCQ.inverse())
                 detIpCQ = IpCQ.det().sqrt()
                 S1dx = S1.matmul(dx)
-                cost = 1.0 - (-0.5*dx.matmul(S1dx)).exp()/detIpCQ
+                cost = 1.0 - (-0.5 * dx.matmul(S1dx)).exp() / detIpCQ
         else:
             dx = mean - self.x_goal
             dxQ = dx.matmul(Q)
-            qcost = (dxQ*dx).sum(-1) if dims > 1 else dxQ.matmul(dx)
-            cost = 1.0 - (-0.5*qcost).exp()
+            qcost = (dxQ * dx).sum(-1) if dims > 1 else dxQ.matmul(dx)
+            cost = 1.0 - (-0.5 * qcost).exp()
 
         if not terminal:
             du = u - self.u_goal
             duR = du.matmul(self.R)
-            cost += (duR*du).sum(-1) if dims > 1 else duR.matmul(du)
+            cost += (duR * du).sum(-1) if dims > 1 else duR.matmul(du)
 
         return cost
