@@ -12,8 +12,14 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
-"""Sample dynamics models."""
+"""Double cartpole example."""
 
-from . import cartpole, double_cartpole, pendulum, rendezvous
+from .env import DoubleCartpoleEnv
+from .cost import DoubleCartpoleCost
+from .model import DoubleCartpoleDynamicsModel
 
-__all__ = ["cartpole", "double_cartpole", "pendulum", "rendezvous"]
+__all__ = [
+    "DoubleCartpoleCost",
+    "DoubleCartpoleDynamicsModel",
+    "DoubleCartpoleEnv",
+]
