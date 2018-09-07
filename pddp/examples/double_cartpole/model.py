@@ -181,14 +181,16 @@ class DoubleCartpoleDynamicsModel(DynamicsModel):
         new_theta1_dot = theta1_dot + sol[..., 1].view(theta1_dot.shape) * dt
         new_theta2_dot = theta2_dot + sol[..., 2].view(theta2_dot.shape) * dt
 
-        mean = torch.stack([
-            x + new_x_dot * dt,
-            new_x_dot,
-            theta1 + new_theta1_dot * dt,
-            new_theta1_dot,
-            theta2 + new_theta2_dot * dt,
-            new_theta2_dot,
-        ])
+        mean = torch.stack(
+            [
+                x + new_x_dot * dt,
+                new_x_dot,
+                theta1 + new_theta1_dot * dt,
+                new_theta1_dot,
+                theta2 + new_theta2_dot * dt,
+                new_theta2_dot,
+            ],
+            dim=-1)
 
         return encode(mean, V=var, encoding=encoding)
 

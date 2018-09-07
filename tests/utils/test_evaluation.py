@@ -20,11 +20,13 @@ MODELS = [
     cartpole.CartpoleDynamicsModel,
     pendulum.PendulumDynamicsModel,
     rendezvous.RendezvousDynamicsModel,
+    double_cartpole.DoubleCartpoleDynamicsModel,
 ]
 COSTS = [
     cartpole.CartpoleCost,
     pendulum.PendulumCost,
     rendezvous.RendezvousCost,
+    double_cartpole.DoubleCartpoleCost,
 ]
 
 
