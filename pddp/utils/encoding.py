@@ -184,7 +184,8 @@ def decode_covar(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             raise NotImplementedError("Expected a 1D or 2D tensor")
     elif encoding == StateEncoding.UPPER_TRIANGULAR_CHOLESKY:
         L = _L_from_flat_triu(other, state_size)
-        return L.transpose(dim0=-2, dim1=-1).matmul(L)
+        return (L.transpose(dim0=-2, dim1=-1).bmm(L)
+                if L.dim() > 2 else L.t().mm(L))
     elif encoding == StateEncoding.VARIANCE_ONLY:
         if other.dim() == 1:
             return other.diag()
