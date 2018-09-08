@@ -200,44 +200,40 @@ class PDDPController(iLQRController):
                         L_uu,
                         reg=self._mu)
 
-                    # Backtracking line search.
-                    for alpha in alphas:
-                        if linearize_dynamics:
-                            Z_new, U_new = _linear_control_law(
-                                Z, U, F_z, F_u, k, K_new, alpha)
-                        else:
-                            Z_new, U_new = _control_law(self.model, Z, U, k,
-                                                        K_new, alpha, encoding,
-                                                        self._model_opts)
+                    # Batch-backtracking line search.
+                    Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K_new,
+                                                    alphas, encoding,
+                                                    self._model_opts)
+                    J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b, encoding,
+                                            self._cost_opts)
+                    amin = J_new_b.argmin()
+                    alpha = alphas[amin]
+                    J_new = J_new_b[amin].detach()
+                    Z_new = Z_new_b[:, amin].detach()
+                    U_new = U_new_b[:, amin].detach()
 
-                        J_new = _trajectory_cost(self.cost, Z_new, U_new,
-                                                 encoding, self._cost_opts)
+                    if J_new < J_opt:
+                        # Check if converged due to small change.
+                        if (J_opt - J_new).abs() / J_opt < tol:
+                            converged = True
+                        J_opt = J_new
+                        Z = Z_new
+                        U = U_new
+                        K = K_new
+                        changed = True
 
-                        if J_new < J_opt:
-                            # Check if converged due to small change.
-                            if (J_opt - J_new).abs() / J_opt <= tol:
-                                converged = True
-                            elif J_opt <= max_J:
-                                converged = True
+                        # Decrease regularization term.
+                        self._delta = min(1.0, self._delta) / self._delta_0
+                        self._mu *= self._delta
+                        if self._mu <= self._mu_min:
+                            self._mu = 0.0
 
-                            J_opt = J_new
-                            Z = Z_new
-                            U = U_new
-                            K = K_new
-                            changed = True
-
-                            # Decrease regularization term.
-                            self._delta = min(1.0, self._delta) / self._delta_0
-                            self._mu *= self._delta
-                            if self._mu <= self._mu_min:
-                                self._mu = 0.0
-
-                            accepted = True
-                            break
+                        accepted = True
 
                     info = {
                         "loss": J_opt.detach_().cpu().numpy(),
                         "reg": self._mu,
+                        "alpha": alpha.cpu().numpy(),
                         "accepted": accepted,
                     }
                     if self.training:

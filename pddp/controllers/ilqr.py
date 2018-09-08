@@ -129,37 +129,40 @@ class iLQRController(Controller):
                 k, K_new = backward(
                     Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=self._mu)
 
-                # Backtracking line search.
-                for alpha in alphas:
-                    Z_new, U_new = _control_law(self.model, Z, U, k, K_new,
-                                                alpha, encoding,
+                # Batch-backtracking line search.
+                Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K_new,
+                                                alphas, encoding,
                                                 self._model_opts)
-                    J_new = _trajectory_cost(self.cost, Z_new, U_new, encoding,
-                                             self._cost_opts)
+                J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b, encoding,
+                                         self._cost_opts)
+                amin = J_new_b.argmin()
+                alpha = alphas[amin]
+                J_new = J_new_b[amin].detach()
+                Z_new = Z_new_b[:, amin].detach()
+                U_new = U_new_b[:, amin].detach()
 
-                    if J_new < J_opt:
-                        # Check if converged due to small change.
-                        if (J_opt - J_new).abs() / J_opt < tol:
-                            converged = True
+                if J_new < J_opt:
+                    # Check if converged due to small change.
+                    if (J_opt - J_new).abs() / J_opt < tol:
+                        converged = True
+                    J_opt = J_new
+                    Z = Z_new
+                    U = U_new
+                    K = K_new
+                    changed = True
 
-                        J_opt = J_new
-                        Z = Z_new
-                        U = U_new
-                        K = K_new
-                        changed = True
+                    # Decrease regularization term.
+                    self._delta = min(1.0, self._delta) / self._delta_0
+                    self._mu *= self._delta
+                    if self._mu <= self._mu_min:
+                        self._mu = 0.0
 
-                        # Decrease regularization term.
-                        self._delta = min(1.0, self._delta) / self._delta_0
-                        self._mu *= self._delta
-                        if self._mu <= self._mu_min:
-                            self._mu = 0.0
-
-                        accepted = True
-                        break
+                    accepted = True
 
                 pbar.set_postfix({
                     "loss": J_opt.detach_().cpu().numpy(),
                     "reg": self._mu,
+                    "alpha": alpha.cpu().numpy(),
                     "accepted": accepted,
                 })
 
@@ -389,14 +392,25 @@ def _control_law(model,
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
     model.eval()
+    if alpha.numel()> 1:
+        # make alpha a column vector
+        alpha = alpha.flatten().unsqueeze(-1)
+        # repeat Z_new and U_new (once per alpha)
+        Z_new = Z_new.repeat(alpha.shape[0], 1, 1).transpose(0, 1)
+        U_new = U_new.repeat(alpha.shape[0], 1, 1).transpose(0, 1)
 
     for i in range(U.shape[0]):
         z = Z[i]
         u = U[i]
         z_new = Z_new[i]
 
+        # if alpha is a column vector, dz and du will be matrices
         dz = z_new - z
-        du = alpha * (k[i] + K[i].matmul(dz))
+        du = alpha * k[i]
+        if alpha.numel() > 1:
+            du = du + dz.mm(K[i].t())
+        else:
+            du = du + K[i].matmul(dz)
 
         u_new = u + du
         z_new_next = model(z_new, u_new, i, encoding, **model_opts)
@@ -412,6 +426,12 @@ def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
+    if alpha.numel()> 1:
+        # make alpha a column vector
+        alpha = alpha.flatten.unsqueeze(-1)
+        # repeat Z_new and U_new (once per alpha)
+        Z_new = Z_new.repeat(alpha.shape[0], 1, 1).transpose(0, 1)
+        U_new = U_new.repeat(alpha.shape[0], 1, 1).transpose(0, 1)
 
     for i in range(U.shape[0]):
         z = Z[i]
@@ -419,8 +439,13 @@ def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
         z_new = Z_new[i]
 
         dz = z_new - z
-        du = alpha * k[i] + K[i].matmul(dz)
-        dz_ = F_z[i].matmul(dz) + F_u[i].matmul(du)
+        du = alpha * k[i]
+        if alpha.numel() > 1:
+            du = du + dz.mm(K[i].t())
+            dz_ = F_z[i].matmul(dz) + F_u[i].matmul(du)
+        else:
+            du = du + K[i].matmul(dz)
+            dz_ = dz.mm(F_z[i].t()) + du.mm(F_u[i].t())
 
         Z_new[i + 1] = Z[i + 1] + dz_
         U_new[i] = u + du
@@ -431,8 +456,25 @@ def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
 @torch.no_grad()
 def _trajectory_cost(cost, Z, U, encoding=StateEncoding.DEFAULT, cost_opts={}):
     cost.eval()
-    N = U.shape[0]
+    N = torch.tensor(U.shape[0])
     I = torch.arange(N)
-    L = cost(Z[:-1], U, I, terminal=False, encoding=encoding, **cost_opts)
-    l_f = cost(Z[-1], None, N, terminal=True, encoding=encoding, **cost_opts)
+    batch_shape = None
+    Z_run = Z[:-1]
+    Z_end = Z[-1]
+    if Z.dim() > 2:
+        batch_shape = Z.shape[1:-1]
+        numel = torch.tensor(batch_shape).prod()
+        # we assume the first dimension is time
+        Z_run = Z_run.reshape(-1, Z.shape[-1])
+        Z_end = Z_end.reshape(-1, Z.shape[-1])
+        U = U.reshape(-1, U.shape[-1])
+        I = I.repeat(numel)
+        N = N.repeat(numel)
+
+    L = cost(Z_run, U, I, terminal=False, encoding=encoding, **cost_opts)
+    l_f = cost(Z_end, None, N, terminal=True, encoding=encoding, **cost_opts)
+    if batch_shape is not None:
+        L = L.reshape(N[0], *batch_shape)
+        l_f = l_f.reshape(*batch_shape)
+        return L.sum(0) + l_f
     return L.sum() + l_f
