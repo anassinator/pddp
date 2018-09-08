@@ -287,6 +287,7 @@ def bnn_dynamics_model_factory(state_size,
                     u,
                     i,
                     encoding=StateEncoding.DEFAULT,
+                    identical_inputs=False,
                     resample=False,
                     sample_input_distribution=True,
                     infer_noise_variables=True,
@@ -298,6 +299,8 @@ def bnn_dynamics_model_factory(state_size,
                 u (Tensor<..., action_size>): Action vector(s).
                 i (Tensor<...>): Time index.
                 encoding (int): StateEncoding enum.
+                identical_inputs (bool): Whether the batched inputs can be
+                    assumed identical or not.
                 resample (bool): Whether to force resample.
                 sample_input_distribution (bool): Whether to sample particles
                     from the input distribution or simply use their mean.
@@ -313,30 +316,42 @@ def bnn_dynamics_model_factory(state_size,
             X = mean.expand(self.n_particles, *mean.shape)
 
             if sample_input_distribution:
-                if resample or i not in self.eps_in:
-                    if X.dim() == 3:
-                        # This is required to make batched jacobians correct as
-                        # the batches are in the second dimension and should
-                        # share the same samples.
-                        eps = torch.randn_like(X[:, 0, :])
-                    else:
-                        eps = torch.randn_like(X)
-                    self.eps_in[i] = eps
-
                 L = decode_covar_sqrt(z, encoding)
                 if infer_noise_variables and i > 0:
-                    if X.dim() == 3:
-                        deltas = self.output[i - 1][:, 0, :] - mean[0]
-                        L_ = L[0]
-                    else:
+                    if not identical_inputs:
                         deltas = self.output[i - 1] - mean
-                        L_ = L
+                        if X.dim() == 3:
+                            deltas = deltas.permute(1, 0, 2)
 
-                    eps = torch.trtrs(
-                        deltas.t(), L_, transpose=True)[0].t().detach()
+                        eps = deltas.transpose(-2, -1).gesv(
+                            L.transpose(-2, -1))[0]
+                        eps = eps.transpose(0, 2).detach()
+
+                        if X.dim() == 3:
+                            eps = eps.permute(0, 2, 1)
+                    else:
+                        if X.dim() == 3:
+                            deltas = self.output[i - 1][:, 0, :] - mean[0]
+                            L_ = L[0]
+                        else:
+                            deltas = self.output[i - 1] - mean
+                            L_ = L
+
+                        eps = torch.trtrs(
+                            deltas.t(), L_, transpose=True)[0].t().detach()
                 else:
+                    if resample or i not in self.eps_in:
+                        if X.dim() == 3:
+                            # This is required to make batched jacobians correct as
+                            # the batches are in the second dimension and should
+                            # share the same samples.
+                            eps = torch.randn_like(X[:, 0, :])
+                        else:
+                            eps = torch.randn_like(X)
+                        self.eps_in[i] = eps
                     eps = self.eps_in[i]
 
+                print(i, X.shape, identical_inputs, eps.shape, L.shape)
                 if X.dim() == 3:
                     eps = eps.unsqueeze(1).repeat(1, X.shape[1], 1)
                     X = X + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)

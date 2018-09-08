@@ -102,6 +102,7 @@ class Cost(torch.nn.Module):
                 i,
                 terminal=False,
                 encoding=StateEncoding.DEFAULT,
+                identical_inputs=False,
                 **kwargs):
         """Cost function.
 
@@ -112,6 +113,8 @@ class Cost(torch.nn.Module):
             terminal (bool): Whether the cost is terminal. If so, u should be
                 `None`.
             encoding (int): StateEncoding enum.
+            identical_inputs (bool): Whether the batched inputs can be
+                assumed identical or not.
 
         Returns:
             The expectation of the cost (Tensor<...>).

@@ -60,7 +60,13 @@ class DynamicsModel(torch.nn.Module):
         """
         raise NotImplementedError
 
-    def forward(self, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
+    def forward(self,
+                z,
+                u,
+                i,
+                encoding=StateEncoding.DEFAULT,
+                identical_inputs=False,
+                **kwargs):
         """Dynamics model function.
 
         Args:
@@ -68,6 +74,8 @@ class DynamicsModel(torch.nn.Module):
             u (Tensor<..., action_size>): Action vector(s).
             i (Tensor<...>): Time index.
             encoding (int): StateEncoding enum.
+            identical_inputs (bool): Whether the batched inputs can be
+                assumed identical or not.
 
         Returns:
             Next encoded state distribution (Tensor<..., encoded_state_size>).

@@ -205,7 +205,13 @@ def batch_eval_cost(cost,
     u_rep = zu_rep[:, encoded_state_size:] if not terminal else None
 
     l_rep = cost(
-        z_rep, u_rep, i, terminal=terminal, encoding=encoding, **kwargs)
+        z_rep,
+        u_rep,
+        i,
+        terminal=terminal,
+        encoding=encoding,
+        identical_inputs=True,
+        **kwargs)
     l = l_rep[0]
 
     l_zu_rep, = torch.autograd.grad(
@@ -261,8 +267,13 @@ def batch_eval_dynamics(model,
 
     zu = torch.cat([z, u], -1)
     zu_rep = zu.expand(encoded_state_size, -1)
-    z_next_rep = model(zu_rep[:, :encoded_state_size],
-                       zu_rep[:, encoded_state_size:], i, encoding, **kwargs)
+    z_next_rep = model(
+        zu_rep[:, :encoded_state_size],
+        zu_rep[:, encoded_state_size:],
+        i,
+        encoding,
+        identical_inputs=True,
+        **kwargs)
 
     # Parallelized jacobian.
     d_dzu, = torch.autograd.grad(z_next_rep, zu_rep,
