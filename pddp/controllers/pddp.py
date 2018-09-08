@@ -157,7 +157,7 @@ class PDDPController(iLQRController):
             bestJ = J
 
         # Backtracking line search candidates 0 < alpha <= 1.
-        alphas = 1.1**(-torch.arange(10.0)**2).to(**tensor_opts)
+        alphas = 10.0**torch.linspace(0, -3, 11).to(**tensor_opts)
 
         while True:
             if resample_model and hasattr(self.model, "resample"):
@@ -165,8 +165,7 @@ class PDDPController(iLQRController):
                 self.model.resample()
 
             # Reset regularization term.
-            self._mu = 1.0
-            self._delta = self._delta_0
+            self._reset_reg()
 
             # Get initial state distribution.
             z0 = self.env.get_state().encode(encoding).detach().to(
@@ -188,24 +187,29 @@ class PDDPController(iLQRController):
                         changed = False
 
                     # Backward pass.
-                    k, K_new = backward(
-                        Z,
-                        F_z,
-                        F_u,
-                        L,
-                        L_z,
-                        L_u,
-                        L_zz,
-                        L_uz,
-                        L_uu,
-                        reg=self._mu)
+                    try:
+                        k, K_new = backward(
+                            Z,
+                            F_z,
+                            F_u,
+                            L,
+                            L_z,
+                            L_u,
+                            L_zz,
+                            L_uz,
+                            L_uu,
+                            reg=self._mu)
+                    except RuntimeError:
+                        if self._increase_reg():
+                            continue
+                        break
 
                     # Batch-backtracking line search.
                     Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K_new,
                                                     alphas, encoding,
                                                     self._model_opts)
-                    J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b, encoding,
-                                            self._cost_opts)
+                    J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b,
+                                               encoding, self._cost_opts)
                     amin = J_new_b.argmin()
                     alpha = alphas[amin]
                     J_new = J_new_b[amin].detach()
@@ -220,15 +224,11 @@ class PDDPController(iLQRController):
                         Z = Z_new
                         U = U_new
                         K = K_new
+
                         changed = True
-
-                        # Decrease regularization term.
-                        self._delta = min(1.0, self._delta) / self._delta_0
-                        self._mu *= self._delta
-                        if self._mu <= self._mu_min:
-                            self._mu = 0.0
-
                         accepted = True
+
+                        self._decrease_reg()
 
                     info = {
                         "loss": J_opt.detach_().cpu().numpy(),
@@ -245,13 +245,8 @@ class PDDPController(iLQRController):
                         on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
                                      accepted, converged)
 
-                    if not accepted:
-                        # Increase regularization term.
-                        self._delta = max(1.0, self._delta) * self._delta_0
-                        self._mu = max(self._mu_min, self._mu * self._delta)
-                        if self._mu >= max_reg:
-                            warnings.warn("exceeded max regularization term")
-                            break
+                    if not accepted and not self._increase_reg():
+                        break
 
                     if converged:
                         break

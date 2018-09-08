@@ -99,13 +99,10 @@ class iLQRController(Controller):
         U = U.detach()
         N, action_size = U.shape
         tensor_opts = {"dtype": U.dtype, "device": U.device}
+        self._reset_reg()
 
         # Backtracking line search candidates 0 < alpha <= 1.
-        alphas = 1.1**(-torch.arange(10.0)**2).to(**tensor_opts)
-
-        # Reset regularization term.
-        self._mu = 1.0
-        self._delta = self._delta_0
+        alphas = 10.0**torch.linspace(0, -3, 11).to(**tensor_opts)
 
         # Get initial state distribution.
         z0 = self.env.get_state().encode(encoding).detach().to(**tensor_opts)
@@ -126,15 +123,29 @@ class iLQRController(Controller):
                     changed = False
 
                 # Backward pass.
-                k, K_new = backward(
-                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=self._mu)
+                try:
+                    k, K_new = backward(
+                        Z,
+                        F_z,
+                        F_u,
+                        L,
+                        L_z,
+                        L_u,
+                        L_zz,
+                        L_uz,
+                        L_uu,
+                        reg=self._mu)
+                except RuntimeError:
+                    if self._increase_reg():
+                        continue
+                    break
 
                 # Batch-backtracking line search.
                 Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K_new,
                                                 alphas, encoding,
                                                 self._model_opts)
-                J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b, encoding,
-                                         self._cost_opts)
+                J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b,
+                                           encoding, self._cost_opts)
                 amin = J_new_b.argmin()
                 alpha = alphas[amin]
                 J_new = J_new_b[amin].detach()
@@ -145,19 +156,16 @@ class iLQRController(Controller):
                     # Check if converged due to small change.
                     if (J_opt - J_new).abs() / J_opt < tol:
                         converged = True
+
                     J_opt = J_new
                     Z = Z_new
                     U = U_new
                     K = K_new
+
                     changed = True
-
-                    # Decrease regularization term.
-                    self._delta = min(1.0, self._delta) / self._delta_0
-                    self._mu *= self._delta
-                    if self._mu <= self._mu_min:
-                        self._mu = 0.0
-
                     accepted = True
+
+                    self._decrease_reg()
 
                 pbar.set_postfix({
                     "loss": J_opt.detach_().cpu().numpy(),
@@ -170,18 +178,34 @@ class iLQRController(Controller):
                     on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
                                  accepted, converged)
 
-                if not accepted:
-                    # Increase regularization term.
-                    self._delta = max(1.0, self._delta) * self._delta_0
-                    self._mu = max(self._mu_min, self._mu * self._delta)
-                    if self._mu >= max_reg:
-                        warnings.warn("exceeded max regularization term")
-                        break
+                if not accepted and not self._increase_reg():
+                    break
 
                 if converged:
                     break
 
         return Z, U, K
+
+    def _reset_reg(self):
+        # Reset regularization term.
+        self._mu = 1.0
+        self._delta = self._delta_0
+
+    def _decrease_reg(self):
+        # Decrease regularization term.
+        self._delta = min(1.0, self._delta) / self._delta_0
+        self._mu *= self._delta
+        if self._mu <= self._mu_min:
+            self._mu = 0.0
+
+    def _increase_reg(self):
+        # Increase regularization term.
+        self._delta = max(1.0, self._delta) * self._delta_0
+        self._mu = max(self._mu_min, self._mu * self._delta)
+        if self._mu >= max_reg:
+            warnings.warn("exceeded max regularization term")
+            return False
+        return True
 
 
 def forward(z0,
@@ -352,21 +376,17 @@ def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0):
     k = torch.empty(N, action_size, **tensor_opts)
     K = torch.empty(N, action_size, encoded_state_size, **tensor_opts)
 
-    reg = reg * torch.eye(V_zz.shape[0], **tensor_opts)
+    reg = reg * torch.eye(encoded_state_size, **tensor_opts)
 
     for i in range(N - 1, -1, -1):
         Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i], L_zz[i],
                                        L_uz[i], L_uu[i], V_z, V_zz + reg)
 
-        try:
-            k[i] = -Q_u.gesv(Q_uu)[0].view(-1)
-            K[i] = -Q_uz.gesv(Q_uu)[0]
-        except RuntimeError as e:
-            # Fallback to pseudo-inverse.
-            warnings.warn("singular matrix: falling back to pseudo-inverse")
-            Q_uu_inv = Q_uu.pinverse()
-            k[i] = -Q_uu_inv.matmul(Q_u)
-            K[i] = -Q_uu_inv.mm(Q_uz)
+        Q_uu_chol = Q_uu.potrf()
+        Q_uz_u = torch.cat([Q_u.unsqueeze(1), Q_uz], dim=-1)
+        kK = -Q_uz_u.potrs(Q_uu_chol)
+        k[i] = kK[:, 0]
+        K[i] = kK[:, 1:]
 
         V_z = Q_z + K[i].t().matmul(Q_u)
         V_z += K[i].t().mm(Q_uu).matmul(k[i])
@@ -392,7 +412,7 @@ def _control_law(model,
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
     model.eval()
-    if alpha.numel()> 1:
+    if alpha.numel() > 1:
         # make alpha a column vector
         alpha = alpha.flatten().unsqueeze(-1)
         # repeat Z_new and U_new (once per alpha)
@@ -426,7 +446,7 @@ def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
-    if alpha.numel()> 1:
+    if alpha.numel() > 1:
         # make alpha a column vector
         alpha = alpha.flatten.unsqueeze(-1)
         # repeat Z_new and U_new (once per alpha)
