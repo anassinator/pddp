@@ -200,7 +200,7 @@ class PDDPController(iLQRController):
                             L_uu,
                             reg=self._mu)
                     except RuntimeError:
-                        if self._increase_reg():
+                        if self._increase_reg(max_reg):
                             continue
                         break
 
@@ -245,7 +245,7 @@ class PDDPController(iLQRController):
                         on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
                                      accepted, converged)
 
-                    if not accepted and not self._increase_reg():
+                    if not accepted and not self._increase_reg(max_reg):
                         break
 
                     if converged:

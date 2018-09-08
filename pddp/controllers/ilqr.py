@@ -136,7 +136,7 @@ class iLQRController(Controller):
                         L_uu,
                         reg=self._mu)
                 except RuntimeError:
-                    if self._increase_reg():
+                    if self._increase_reg(max_reg):
                         continue
                     break
 
@@ -178,7 +178,7 @@ class iLQRController(Controller):
                     on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
                                  accepted, converged)
 
-                if not accepted and not self._increase_reg():
+                if not accepted and not self._increase_reg(max_reg):
                     break
 
                 if converged:
@@ -198,7 +198,7 @@ class iLQRController(Controller):
         if self._mu <= self._mu_min:
             self._mu = 0.0
 
-    def _increase_reg(self):
+    def _increase_reg(self, max_reg):
         # Increase regularization term.
         self._delta = max(1.0, self._delta) * self._delta_0
         self._mu = max(self._mu_min, self._mu * self._delta)
