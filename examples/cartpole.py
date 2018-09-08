@@ -18,11 +18,15 @@ torch.set_flush_denormal(True)
 
 N = 25  # Horizon length.
 DT = 0.1  # Time step (s).
+PLOT = True  # Whether to plot or not.
 RENDER = True  # Whether to render the environment or not.
 ENCODING = pddp.StateEncoding.DEFAULT
 
 
 def plot_loss(J_hist):
+    if not PLOT:
+        return
+
     plt.plot(J_hist)
     plt.xlabel("Iteration")
     plt.ylabel("Total loss")
@@ -32,6 +36,9 @@ def plot_loss(J_hist):
 
 
 def plot_phase(X):
+    if not PLOT:
+        return
+
     theta = np.unwrap(X[:, 2])  # Makes for smoother plots.
     theta_dot = X[:, 3]
 
@@ -47,6 +54,9 @@ def plot_phase(X):
 
 
 def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
+    if not PLOT:
+        return
+
     mean_ = pddp.utils.encoding.decode_mean(Z, encoding)
     std_ = pddp.utils.encoding.decode_std(Z, encoding)
 
@@ -95,9 +105,10 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
 if __name__ == "__main__":
     J_hist = []
 
-    plt.figure(figsize=(10, 9))
-    plt.ion()
-    plt.show()
+    if PLOT:
+        plt.figure(figsize=(10, 9))
+        plt.ion()
+        plt.show()
 
     def on_trial(trial, X, U):
         plt.subplot(5, 1, 1)

@@ -16,8 +16,8 @@ warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
 
 torch.set_flush_denormal(True)
 
-N = 25  # Horizon length.
-DT = 0.1  # Time step (s).
+N = 50  # Horizon length.
+DT = 0.05  # Time step (s).
 PLOT = True  # Whether to plot or not.
 RENDER = True  # Whether to render the environment or not.
 ENCODING = pddp.StateEncoding.DEFAULT
@@ -35,24 +35,6 @@ def plot_loss(J_hist):
     plt.show()
 
 
-def plot_phase(X):
-    if not PLOT:
-        return
-
-    theta = np.unwrap(X[:, 0])  # Makes for smoother plots.
-    theta_dot = X[:, 1]
-
-    plt.xlim(-3 * np.pi, 3 * np.pi)
-    plt.ylim(-3 * np.pi, 3 * np.pi)
-
-    plt.plot(theta, theta_dot)
-    plt.xlabel("Orientation (rad)")
-    plt.ylabel("Angular velocity (rad/s)")
-
-    plt.draw()
-    plt.pause(0.001)
-
-
 def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
     if not PLOT:
         return
@@ -61,11 +43,15 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
     std_ = pddp.utils.encoding.decode_std(Z, encoding)
 
     labels = [
-        "Orientation (rad)",
-        "Angular velocity (rad/s)",
+        "Position (m)",
+        "Velocity (m/s)",
+        "Link 1 orientation (rad)",
+        "Link 1 angular velocity (rad/s)",
+        "Link 2 orientation (rad)",
+        "Link 2 angular velocity (rad/s)",
     ]
 
-    colors = ["C0", "C1"]
+    colors = ["C0", "C1", "C2", "C3", "C4", "C5"]
 
     if indices is None:
         indices = list(range(mean_.shape[-1]))
@@ -86,9 +72,9 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
 
     if legend:
         plt.legend(
-            bbox_to_anchor=(0.0, 1.0, 1.0, 0.5),
+            bbox_to_anchor=(0.0, 1.0, 1.0, 2.0),
             loc="upper left",
-            ncol=4,
+            ncol=3,
             mode="expand",
             borderaxespad=0.)
 
@@ -104,31 +90,31 @@ if __name__ == "__main__":
     J_hist = []
 
     if PLOT:
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(10, 9))
         plt.ion()
         plt.show()
 
     def on_trial(trial, X, U):
-        plt.subplot(3, 1, 1)
+        plt.subplot(7, 1, 1)
         plt.cla()
         plt.title("Trial {}".format(trial + 1))
         plot_path(X, encoding=pddp.StateEncoding.IGNORE_UNCERTAINTY)
 
     def on_iteration(iteration, Z, U, J_opt, accepted, converged):
         J_hist.append(J_opt.detach().numpy())
+        if iteration % 10 == 9 or iteration == 0:
+            for i in range(model.state_size):
+                plt.subplot(7, 1, i + 2)
+                plt.cla()
+                if i == 0:
+                    plt.title("Iteration {}".format(iteration + 1))
+                if i == model.state_size:
+                    plt.xlabel("Time step")
+                plot_path(Z, indices=[i], legend=False)
 
-        for i in range(model.state_size):
-            plt.subplot(3, 1, i + 2)
-            plt.cla()
-            if i == 0:
-                plt.title("Iteration {}".format(iteration + 1))
-            if i == model.state_size:
-                plt.xlabel("Time step")
-            plot_path(Z, indices=[i], legend=False)
-
-    cost = pddp.examples.pendulum.PendulumCost()
-    env = pddp.examples.pendulum.PendulumEnv(dt=DT, render=RENDER)
-    model_class = pddp.examples.pendulum.PendulumDynamicsModel
+    cost = pddp.examples.double_cartpole.DoubleCartpoleCost()
+    env = pddp.examples.double_cartpole.DoubleCartpoleEnv(dt=DT, render=RENDER)
+    model_class = pddp.examples.double_cartpole.DoubleCartpoleDynamicsModel
 
     model = pddp.models.bnn.bnn_dynamics_model_factory(
         env.state_size,
@@ -143,6 +129,10 @@ if __name__ == "__main__":
         env,
         model,
         cost,
+        model_opts={
+            "use_predicted_std": False,
+            "infer_noise_variables": True,
+        },
         training_opts={
             "n_iter": 1000,
             "learning_rate": 1e-3,
@@ -153,13 +143,14 @@ if __name__ == "__main__":
     Z, U, K = controller.fit(
         U,
         encoding=ENCODING,
-        n_iterations=50,
+        n_iterations=200,
         max_var=0.4,
+        tol=0,
         on_iteration=on_iteration,
         on_trial=on_trial,
         max_J=0,
         max_trials=20,
-    )
+        start_from_bestU=True)
 
     plt.figure()
     plot_loss(J_hist)
