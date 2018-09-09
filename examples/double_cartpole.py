@@ -4,15 +4,13 @@ from __future__ import print_function
 
 import six
 import torch
-import warnings
-import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 
 import pddp
 import pddp.examples
 
-warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
+from utils import plot_pause
 
 torch.set_flush_denormal(True)
 
@@ -32,7 +30,7 @@ def plot_loss(J_hist):
     plt.ylabel("Total loss")
     plt.title("Loss path")
 
-    plt.show()
+    plt.show(block=False)
 
 
 def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
@@ -83,7 +81,7 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
 
     plt.tight_layout()
     plt.draw()
-    plt.pause(0.001)
+    plot_pause(0.001)
 
 
 if __name__ == "__main__":
@@ -92,7 +90,7 @@ if __name__ == "__main__":
     if PLOT:
         plt.figure(figsize=(10, 9))
         plt.ion()
-        plt.show()
+        plt.show(block=False)
 
     def on_trial(trial, X, U):
         plt.subplot(7, 1, 1)

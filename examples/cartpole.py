@@ -4,15 +4,13 @@ from __future__ import print_function
 
 import six
 import torch
-import warnings
-import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 
 import pddp
 import pddp.examples
 
-warnings.filterwarnings("ignore", category=matplotlib.cbook.mplDeprecation)
+from utils import plot_pause
 
 torch.set_flush_denormal(True)
 
@@ -32,25 +30,7 @@ def plot_loss(J_hist):
     plt.ylabel("Total loss")
     plt.title("Loss path")
 
-    plt.show()
-
-
-def plot_phase(X):
-    if not PLOT:
-        return
-
-    theta = np.unwrap(X[:, 2])  # Makes for smoother plots.
-    theta_dot = X[:, 3]
-
-    plt.xlim(-3 * np.pi, 3 * np.pi)
-    plt.ylim(-3 * np.pi, 3 * np.pi)
-
-    plt.plot(theta, theta_dot)
-    plt.xlabel("Orientation (rad)")
-    plt.ylabel("Angular velocity (rad/s)")
-
-    plt.draw()
-    plt.pause(0.001)
+    plt.show(block=False)
 
 
 def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
@@ -99,7 +79,7 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
 
     plt.tight_layout()
     plt.draw()
-    plt.pause(0.001)
+    plot_pause(0.001)
 
 
 if __name__ == "__main__":
@@ -108,7 +88,7 @@ if __name__ == "__main__":
     if PLOT:
         plt.figure(figsize=(10, 9))
         plt.ion()
-        plt.show()
+        plt.show(block=False)
 
     def on_trial(trial, X, U):
         plt.subplot(5, 1, 1)
