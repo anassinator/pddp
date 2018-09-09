@@ -255,16 +255,27 @@ def augment_state(x, angular_indices, non_angular_indices):
 
     Returns:
         Augmented state vector (Tensor<..., augmented_state_size>) as
-        [non_angular_states, sin(angular_states), cos(angular_states)].
+        [non_angular_states, sin(angle1), cos(angle1), sin(angle2), ...].
     """
     if len(angular_indices) == 0:
         return x
-    elif len(non_angular_indices) == 0:
-        return torch.cat([x.sin(), x.cos()], dim=-1)
 
-    angles = x.index_select(-1, angular_indices)
-    others = x.index_select(-1, non_angular_indices)
-    return torch.cat([others, angles.sin(), angles.cos()], dim=-1)
+    Da = len(angular_indices) * 2
+    Dna = len(non_angular_indices)
+    tensor_opts = {"dtype": x.dtype, "device": x.device}
+
+    if x.dim() == 1:
+        Ma = torch.zeros(Da, **tensor_opts)
+    elif x.dim() == 2:
+        N = x.shape[0]
+        Ma = torch.zeros(N, Da, **tensor_opts)
+
+    mi = x[..., angular_indices]
+    Mna = x[..., non_angular_indices]
+
+    Ma[..., ::2] = mi.sin()
+    Ma[..., 1::2] = mi.cos()
+    return torch.cat([Mna, Ma], dim=-1)
 
 
 def reduce_state(x_, angular_indices, non_angular_indices):
@@ -285,12 +296,14 @@ def reduce_state(x_, angular_indices, non_angular_indices):
 
     n_others = len(non_angular_indices)
     if n_others == 0:
-        sin_angles, cos_angles = x_.split([n_angles, n_angles], dim=-1)
+        sin_angles = x_[..., ::2]
+        cos_angles = x_[..., 1::2]
         angles = torch.atan2(sin_angles, cos_angles)
         return angles
 
-    others, sin_angles, cos_angles = x_.split(
-        [n_others, n_angles, n_angles], dim=-1)
+    others, sin_cos_angles = x_.split([n_others, 2 * n_angles], dim=-1)
+    sin_angles = sin_cos_angles[..., ::2]
+    cos_angles = sin_cos_angles[..., 1::2]
     angles = torch.atan2(sin_angles, cos_angles)
 
     if x_.dim() == 1:

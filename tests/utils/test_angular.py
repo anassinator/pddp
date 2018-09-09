@@ -5,6 +5,8 @@ import pytest
 import numpy as np
 
 from pddp.utils.angular import *
+from pddp.utils.encoding import StateEncoding
+from pddp.utils.gaussian_variable import GaussianVariable
 
 # Organized as angular_indices, non_angular_indices pairs.
 INDICES = [
@@ -49,3 +51,9 @@ def test_augment_reduce_state(indices, augmented_size):
         for j in range(X_.shape[1]):
             J, = torch.autograd.grad(X_[i, j], X, retain_graph=True)
             assert J[i, j].isclose(torch.tensor(1.0), 1e-3)
+
+    # Verify they match with the encoded augmentation implementation.
+    Z = torch.cat([X, torch.zeros_like(X)], dim=-1)
+    Y_ = augment_encoded_state(
+        Z, *indices, encoding=StateEncoding.VARIANCE_ONLY)
+    assert Y_[..., :augmented_size].allclose(Y)
