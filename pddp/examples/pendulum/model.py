@@ -24,10 +24,10 @@ from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
 from ...utils.angular import augment_state, complementary_indices, reduce_state
 
 
-@constrain_model(-1, 1)
+@constrain_model(-2.5, 2.5)
 class PendulumDynamicsModel(DynamicsModel):
 
-    """Friction-less pendulum dynamics model.
+    """Pendulum dynamics model.
 
     Note:
         state: [theta, theta']
@@ -35,7 +35,7 @@ class PendulumDynamicsModel(DynamicsModel):
         theta: 0 is pointing up and increasing counter-clockwise.
     """
 
-    def __init__(self, dt, m=1.0, l=1.0, mu=0.1, g=-9.80665):
+    def __init__(self, dt, m=1.0, l=1.0, mu=0.1, g=9.80665):
         """Constructs PendulumDynamicsModel.
 
         Args:

@@ -15,6 +15,7 @@
 """Pendulum cost."""
 
 import torch
+import numpy as np
 
 from .model import PendulumDynamicsModel
 
@@ -43,16 +44,16 @@ class PendulumCost(QRCost):
         # Don't penalize instantaneous velocities as much.
         # Note: we are operating on the augmented state vectors here:
         #   [theta', sin(theta), cos(theta)]
-        Q_term = 100 * torch.eye(augmented_state_size)
         Q = torch.zeros(augmented_state_size, augmented_state_size)
-        Q[0, 0] = 0.1
+        Q[0, 0] = 1.0
         Q[0, 1] = Q[1, 0] = pendulum_length
         Q[1, 1] = Q[2, 2] = pendulum_length**2
+        Q_term = 100 * torch.eye(augmented_state_size)
         R = 0.1 * torch.eye(model.action_size)
 
         # Goal is not all zeroes after augmenting the state.
         x_goal = augment_state(
-            torch.zeros(model.state_size), model.angular_indices,
+            torch.tensor([np.pi, 0.0]), model.angular_indices,
             model.non_angular_indices)
 
         super(PendulumCost, self).__init__(Q, R, Q_term=Q_term, x_goal=x_goal)

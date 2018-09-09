@@ -117,14 +117,15 @@ if __name__ == "__main__":
     def on_iteration(iteration, Z, U, J_opt, accepted, converged):
         J_hist.append(J_opt.detach().numpy())
 
-        for i in range(model.state_size):
-            plt.subplot(3, 1, i + 2)
-            plt.cla()
-            if i == 0:
-                plt.title("Iteration {}".format(iteration + 1))
-            if i == model.state_size:
-                plt.xlabel("Time step")
-            plot_path(Z, indices=[i], legend=False)
+        if iteration % 10 == 9 or iteration == 0:
+            for i in range(model.state_size):
+                plt.subplot(3, 1, i + 2)
+                plt.cla()
+                if i == 0:
+                    plt.title("Iteration {}".format(iteration + 1))
+                if i == model.state_size:
+                    plt.xlabel("Time step")
+                plot_path(Z, indices=[i], legend=False)
 
     cost = pddp.examples.pendulum.PendulumCost()
     env = pddp.examples.pendulum.PendulumEnv(dt=DT, render=RENDER)
@@ -136,6 +137,8 @@ if __name__ == "__main__":
         [200, 200],
         model_class.angular_indices,
         model_class.non_angular_indices,
+        constrain_min=-2.5,
+        constrain_max=2.5,
     )(n_particles=100)
 
     U = torch.randn(N, model.action_size)
@@ -150,10 +153,10 @@ if __name__ == "__main__":
     )
 
     controller.train()
-    Z, U, K = controller.fit(
+    Z, U = controller.fit(
         U,
         encoding=ENCODING,
-        n_iterations=50,
+        n_iterations=200,
         max_var=0.4,
         on_iteration=on_iteration,
         on_trial=on_trial,
@@ -168,13 +171,10 @@ if __name__ == "__main__":
         # Wait for user interaction before trial.
         _ = six.moves.input("Press ENTER to run")
 
-    Z_ = torch.empty_like(Z)
-    Z_[0] = env.get_state().encode(ENCODING)
-    for i, u in enumerate(U):
-        dz = Z_[i] - Z[i]
-        u = u + K[i].matmul(dz)
+    for i in range(N):
+        z = env.get_state().encode(ENCODING)
+        u = controller(z, i, ENCODING)
         env.apply(u)
-        Z_[i + 1] = env.get_state().encode(ENCODING)
 
     # Wait for user interaction to close everything.
     _ = six.moves.input("Press ENTER to exit")

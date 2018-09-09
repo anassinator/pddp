@@ -108,7 +108,7 @@ class _PendulumEnv(gym.Env):
         return self.state, reward, done, {}
 
     def reset(self):
-        self.state = np.array([np.pi, 0.0])
+        self.state = np.array([0.0, 0.0])
         self.state += 1e-2 * np.random.randn(*self.state.shape)
         return self.state
 
@@ -130,7 +130,7 @@ class _PendulumEnv(gym.Env):
             self.viewer.add_geom(axle)
 
         theta, _ = self.state
-        self.pole_transform.set_rotation(theta + np.pi / 2)
+        self.pole_transform.set_rotation(-theta - np.pi / 2)
         return self.viewer.render(return_rgb_array=mode == "rgb_array")
 
     def close(self):
