@@ -269,6 +269,9 @@ def augment_state(x, angular_indices, non_angular_indices):
     elif x.dim() == 2:
         N = x.shape[0]
         Ma = torch.zeros(N, Da, **tensor_opts)
+    elif x.dim() == 3:
+        N, M = x.shape[:2]
+        Ma = torch.zeros(N, M, Da, **tensor_opts)
 
     mi = x[..., angular_indices]
     Mna = x[..., non_angular_indices]
