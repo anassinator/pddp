@@ -56,7 +56,7 @@ class iLQRController(Controller):
         self._model_opts = model_opts
 
         # Regularization terms.
-        self._mu = 1.0
+        self._mu = 0.0
         self._mu_min = 1e-6
         self._delta_0 = 2.0
         self._delta = self._delta_0
