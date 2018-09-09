@@ -15,7 +15,19 @@
 """Constraint utilities."""
 
 import torch
+import traceback
 from .encoding import StateEncoding
+
+BOXQP_RESULTS = {
+    -1: 'Hessian is not positive definite',
+    0: 'No descent direction found',
+    1: 'Maximum main iterations exceeded',
+    2: 'Maximum line-search iterations exceeded',
+    3: 'No bounds, returning Newton point',
+    4: 'Improvement smaller than tolerance',
+    5: 'Gradient norm smaller than tolerance',
+    6: 'All dimensions are clamped'
+}
 
 
 def constrain(u, min_bounds, max_bounds):
@@ -127,3 +139,128 @@ def constrain_model(min_bounds, max_bounds):
         return cls
 
     return decorator
+
+
+def clamp(u, min_bounds, max_bounds):
+    return torch.min(torch.max(u, min_bounds), max_bounds)
+
+
+@torch.no_grad()
+def boxqp(x0,
+          Q,
+          c,
+          lower,
+          upper,
+          max_iter=100,
+          min_grad=1e-8,
+          tol=1e-8,
+          step_dec=0.6,
+          min_step=1e-22,
+          armijo=0.1,
+          quiet=True):
+    """
+        BoxQP solver for constraned Quadratic programs of the form:
+            Min 0.5*x.t()*Q*x + x.t()*c  s.t. lower<=x<=upper
+        Re-implementation of the MATLAB solver by Yuval Tassa
+    """
+    # algorithm state variables
+    D = Q.shape[0]
+    result = 0
+    old_f = 0
+    gnorm = 0
+    n_factor = 1
+    clamped = torch.zeros(D, dtype=torch.uint8)
+    free = torch.ones(D, dtype=torch.uint8)
+    Ufree = torch.zeros(D)
+
+    # initial x
+    x = clamp(x0, lower, upper)
+    x[torch.isinf(x)] = 0.0
+
+    # initial objective
+    f = 0.5 * x.matmul(Q).matmul(x) + x.matmul(c)
+
+    # solver loop
+    for i in range(max_iter):
+        # check if done
+        if result != 0:
+            break
+
+        # check convergence
+        if i > 0 and (old_f - f) < tol * abs(old_f):
+            result = 4
+            break
+        old_f = f
+
+        # get gradient
+        g = Q.matmul(x) + c
+
+        # get clamped dimensions
+        old_clamped = clamped.clone()
+        clamped[:] = 0
+        clamped[(x == lower) * (g > 0)] = 1
+        clamped[(x == upper) * (g > 0)] = 1
+        free = 1 - clamped
+
+        # check if all clamped
+        if all(clamped):
+            result = 6
+            break
+
+        # check if we need to factorize
+        if i == 0:
+            factorize = True
+        else:
+            factorize = any(old_clamped != clamped)
+
+        if factorize:
+            # get  free dimensions
+            Dfree = free.sum()
+            Qfree = Q[free * free.unsqueeze(1)].reshape(Dfree, Dfree)
+            # factorize
+            try:
+                Ufree = Qfree.potrf()
+                n_factor += 1
+            except RuntimeError:
+                if not quiet:
+                    traceback.print_exc()
+                result = -1
+                break
+
+        # check gradient norm
+        gnorm = g[free].norm()
+        if gnorm < min_grad:
+            result = 5
+            break
+
+        # get search direction
+        g_clamped = Q.matmul(x * clamped.float()) + c
+        search = torch.zeros_like(x)
+        search[free] = -torch.potrs(g_clamped[free], Ufree).flatten() - x[free]
+
+        # check if descent direction
+        sdotg = (search * g).sum()
+        if sdotg > 0:
+            print("BoxQP didn't find a descent direction (Should not happen)")
+            break
+
+        # line search
+        step = 1.0
+        n_step = 0
+        xc = clamp(x + step * search, lower, upper)
+        fc = 0.5 * xc.matmul(Q).matmul(xc) + xc.matmul(c)
+        while (fc - old_f) / (step * sdotg) < armijo:
+            step *= step_dec
+            n_step += 1
+            xc = clamp(x + step * search, lower, upper)
+            fc = 0.5 * xc.matmul(Q).matmul(xc) + xc.matmul(c)
+            if step < min_step:
+                result = 2
+                break
+
+        # accept change
+        x = xc
+        f = fc
+    if not quiet:
+        print BOXQP_RESULTS[result], 'n_iter: %d' % i
+    return x, result, Ufree, free
