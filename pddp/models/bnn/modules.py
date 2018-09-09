@@ -341,8 +341,7 @@ def bnn_dynamics_model_factory(state_size,
                         else:
                             L_ = L
                         eps = torch.trtrs(
-                            deltas.t(), L_,
-                            transpose=True)[0].t().detach()
+                            deltas.t(), L_, transpose=True)[0].t().detach()
                 else:
                     eps = self.eps_in[i]
 
