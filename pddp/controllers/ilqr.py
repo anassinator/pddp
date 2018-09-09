@@ -25,6 +25,7 @@ with warnings.catch_warnings():
 from torch.utils.data import TensorDataset
 
 from .base import Controller
+from ..utils.constraint import clamp, boxqp, BOXQP_RESULTS
 from ..utils.encoding import StateEncoding, decode_var
 from ..utils.evaluation import (batch_eval_cost, batch_eval_dynamics, eval_cost,
                                 eval_dynamics)
@@ -74,6 +75,8 @@ class iLQRController(Controller):
             batch_rollout=True,
             quiet=False,
             on_iteration=None,
+            u_min=None,
+            u_max=None,
             **kwargs):
         """Determines the optimal path to minimize the cost.
 
@@ -137,7 +140,10 @@ class iLQRController(Controller):
                         L_zz,
                         L_uz,
                         L_uu,
-                        reg=self._mu)
+                        reg=self._mu,
+                        u_min=u_min,
+                        u_max=u_max,
+                        U=U)
                 except RuntimeError:
                     if self._increase_reg(max_reg):
                         continue
@@ -244,7 +250,9 @@ def forward(z0,
             encoding=StateEncoding.DEFAULT,
             batch_rollout=True,
             model_opts={},
-            cost_opts={}):
+            cost_opts={},
+            u_min=None,
+            u_max=None):
     """Evaluates the forward rollout.
 
     Args:
@@ -303,6 +311,8 @@ def forward(z0,
     for i in range(N):
         z = Z[i].detach().requires_grad_()
         u = U[i].detach().requires_grad_()
+        if u_min is not None and u_max is not None:
+            u = clamp(u, u_min, u_max)
 
         L[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i] = eval_cost_fn(
             cost, z, u, i, encoding=encoding, **cost_opts)
@@ -380,7 +390,10 @@ def backward(Z,
              L_uz,
              L_uu,
              reg=0.0,
-             V_zz_reg=False):
+             V_zz_reg=False,
+             u_min=None,
+             u_max=None,
+             U=None):
     """Evaluates the backward pass.
 
     Args:
@@ -417,8 +430,8 @@ def backward(Z,
     encoded_state_size = Z.shape[1]
 
     tensor_opts = {"dtype": Z.dtype, "device": Z.device}
-    k = torch.empty(N, action_size, **tensor_opts)
-    K = torch.empty(N, action_size, encoded_state_size, **tensor_opts)
+    k = torch.zeros(N, action_size, **tensor_opts)
+    K = torch.zeros(N, action_size, encoded_state_size, **tensor_opts)
 
     if V_zz_reg:
         reg = reg * torch.eye(encoded_state_size, **tensor_opts)
@@ -448,16 +461,36 @@ def backward(Z,
 
             e_uu, E_uu = Q_uu.eig(True)
             e_uu = e_uu[:, 0]
-            e_uu[e_uu < 0] = 0
+            e_uu[e_uu < 0] = 1e-12
             e_uu += reg
-            Q_uu_inv = (E_uu / e_uu).mm(E_uu.t())
-            Q_uz_u = torch.cat([Q_u.unsqueeze(1), Q_uz], dim=-1)
-            kK = -Q_uu_inv.mm(Q_uz_u)
-            if torch.isnan(kK).any():
-                raise RuntimeError("non-positive definite matrix")
+            if u_min is None or u_max is None:
+                Q_uu_inv = (E_uu / e_uu).mm(E_uu.t())
+                Q_uz_u = torch.cat([Q_u.unsqueeze(1), Q_uz], dim=-1)
+                kK = -Q_uu_inv.mm(Q_uz_u)
+                if torch.isnan(kK).any():
+                    raise RuntimeError("non-positive definite matrix")
 
-            k[i] = kK[:, 0]
-            K[i] = kK[:, 1:]
+                k[i] = kK[:, 0]
+                K[i] = kK[:, 1:]
+            else:
+                Q_uu = (E_uu * e_uu).mm(E_uu.t())
+                # solve QP
+                lower = u_min - U[i]
+                upper = u_max - U[i]
+                k_ip1 = k[i + 1] if i < N - 1 else k[-1]
+                k[i], result, Q_uu_chol_free, free = boxqp(
+                    k_ip1, Q_uu, Q_u, lower, upper, quiet=True)
+
+                if result < 1:
+                    raise RuntimeError(
+                        "BoxQP failed: %s" % BOXQP_RESULTS[result])
+
+                # compute feedback matrix
+                if any(free):
+                    idxs = free.nonzero().flatten()
+                    Q_uz_free = Q_uz[idxs, :]
+                    K_free = -torch.potrs(Q_uz_free, Q_uu_chol_free)
+                    K[i, idxs, :] = K_free
 
             V_z = Q_z + Q_uz.t().matmul(k[i])
             V_zz = Q_zz + Q_uz.t().mm(K[i])
@@ -474,7 +507,9 @@ def _control_law(model,
                  K,
                  alpha,
                  encoding=StateEncoding.DEFAULT,
-                 model_opts={}):
+                 model_opts={},
+                 u_min=None,
+                 u_max=None):
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
@@ -502,6 +537,9 @@ def _control_law(model,
             du = du + K[i].matmul(dz)
 
         u_new = u + du
+        if u_min is not None and u_max is not None:
+            u_new = clamp(u_new, u_min, u_max)
+
         z_new_next = model(z_new, u_new, i, encoding, **model_opts)
 
         Z_new[i + 1] = z_new_next
@@ -511,7 +549,7 @@ def _control_law(model,
 
 
 @torch.no_grad()
-def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
+def _linear_control_law(Z, U, F_z, F_u, k, K, alpha, u_min=None, u_max=None):
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
@@ -533,9 +571,13 @@ def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
         du = alpha * k[i]
         if alpha.numel() > 1:
             du = du + dz.mm(K[i].t())
+            if u_min is not None and u_max is not None:
+                du = clamp(du, u_min - u, u_max - u)
             dz_ = F_z[i].matmul(dz) + F_u[i].matmul(du)
         else:
             du = du + K[i].matmul(dz)
+            if u_min is not None and u_max is not None:
+                du = clamp(du, u_min - u, u_max - u)
             dz_ = dz.mm(F_z[i].t()) + du.mm(F_u[i].t())
 
         Z_new[i + 1] = Z[i + 1] + dz_
