@@ -45,7 +45,7 @@ class DoubleCartpoleCost(QRCost):
         #   [x, x', theta1', theta2',
         #    sin(theta1), cos(theta1),
         #    sin(theta2), cos(theta2)]
-        Q_term = torch.eye(augmented_state_size)
+        Q_term = 100 * torch.eye(augmented_state_size)
         Q = torch.zeros(augmented_state_size, augmented_state_size)
         cost_dims = np.hstack([
             0,

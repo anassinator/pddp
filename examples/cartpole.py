@@ -156,7 +156,7 @@ if __name__ == "__main__":
     )
 
     controller.train()
-    Z, U, K = controller.fit(
+    Z, U = controller.fit(
         U,
         encoding=ENCODING,
         n_iterations=50,
@@ -174,13 +174,10 @@ if __name__ == "__main__":
         # Wait for user interaction before trial.
         _ = six.moves.input("Press ENTER to run")
 
-    Z_ = torch.empty_like(Z)
-    Z_[0] = env.get_state().encode(ENCODING)
-    for i, u in enumerate(U):
-        dz = Z_[i] - Z[i]
-        u = u + K[i].matmul(dz)
+    for i in range(N):
+        z = env.get_state().encode(ENCODING)
+        u = controller(z, i, ENCODING)
         env.apply(u)
-        Z_[i + 1] = env.get_state().encode(ENCODING)
 
     # Wait for user interaction to close everything.
     _ = six.moves.input("Press ENTER to exit")
