@@ -41,11 +41,10 @@ class Controller(torch.nn.Module):
         """
         return super(Controller, self).train(mode)
 
-    def fit(self, z0, U, encoding=StateEncoding.DEFAULT, **kwargs):
+    def fit(self, U, encoding=StateEncoding.DEFAULT, **kwargs):
         """Determines the optimal path to minimize the cost.
 
         Args:
-            z0 (Tensor<encoded_state_size>): Initial encoded state distribution.
             U (Tensor<N, action_size>): Initial action path.
             encoding (int): StateEncoding enum.
 
@@ -53,5 +52,20 @@ class Controller(torch.nn.Module):
             Tuple of:
                 Z (Tensor<N+1, encoded_state_size>): Optimal encoded state path.
                 U (Tensor<N, action_size>): Optimal action path.
+        """
+        raise NotImplementedError
+
+    def forward(self, z, i, encoding=StateEncoding.DEFAULT, **kwargs):
+        """Determines the optimal single-step control to minimize the cost.
+
+        Note: You must `fit()` first.
+
+        Args:
+            z (Tensor<encoded_state_size>): Current encoded state distribution.
+            i (int): Current time step.
+            encoding (int): StateEncoding enum.
+
+        Returns:
+            Optimal action (Tensor<action_size>).
         """
         raise NotImplementedError

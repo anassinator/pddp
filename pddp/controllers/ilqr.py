@@ -34,7 +34,7 @@ class iLQRController(Controller):
 
     """Iterative Linear Quadratic Regulator controller."""
 
-    def __init__(self, env, model, cost, model_opts={}, cost_opts={}):
+    def __init__(self, env, model, cost, model_opts={}, cost_opts={}, **kwargs):
         """Constructs a iLQRController.
 
         Args:
@@ -60,6 +60,10 @@ class iLQRController(Controller):
         self._mu_min = 1e-6
         self._delta_0 = 2.0
         self._delta = self._delta_0
+
+        self._Z_nominal = None
+        self._U_nominal = None
+        self._K = None
 
     def fit(self,
             U,
@@ -106,7 +110,6 @@ class iLQRController(Controller):
 
         # Get initial state distribution.
         z0 = self.env.get_state().encode(encoding).detach().to(**tensor_opts)
-        K = torch.zeros(N, action_size, z0.shape[-1], **tensor_opts)
 
         changed = True
         converged = False
@@ -124,7 +127,7 @@ class iLQRController(Controller):
 
                 # Backward pass.
                 try:
-                    k, K_new = backward(
+                    k, K = backward(
                         Z,
                         F_z,
                         F_u,
@@ -141,9 +144,8 @@ class iLQRController(Controller):
                     break
 
                 # Batch-backtracking line search.
-                Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K_new,
-                                                alphas, encoding,
-                                                self._model_opts)
+                Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K, alphas,
+                                                encoding, self._model_opts)
                 J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b,
                                            encoding, self._cost_opts)
                 amin = J_new_b.argmin()
@@ -158,9 +160,9 @@ class iLQRController(Controller):
                         converged = True
 
                     J_opt = J_new
-                    Z = Z_new
-                    U = U_new
-                    K = K_new
+                    self._Z_nominal = Z = Z_new
+                    self._U_nominal = U = U_new
+                    self._K = K
 
                     changed = True
                     accepted = True
@@ -184,7 +186,24 @@ class iLQRController(Controller):
                 if converged:
                     break
 
-        return Z, U, K
+        return Z, U
+
+    def forward(self, z, i, encoding=StateEncoding.DEFAULT, **kwargs):
+        """Determines the optimal single-step control to minimize the cost.
+
+        Note: You must `fit()` first.
+
+        Args:
+            z (Tensor<encoded_state_size>): Current encoded state distribution.
+            i (int): Current time step.
+            encoding (int): StateEncoding enum.
+
+        Returns:
+            Optimal action (Tensor<action_size>).
+        """
+        dz = z - self._Z_nominal[i]
+        du = self._K[i].matmul(dz)
+        return self._U_nominal[i] + du
 
     def _reset_reg(self):
         # Reset regularization term.
@@ -412,10 +431,12 @@ def _control_law(model,
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
     model.eval()
+
     if alpha.numel() > 1:
-        # make alpha a column vector
+        # Make alpha a column vector
         alpha = alpha.flatten().unsqueeze(-1)
-        # repeat Z_new and U_new (once per alpha)
+
+        # Repeat Z_new and U_new (once per alpha)
         Z_new = Z_new.repeat(alpha.shape[0], 1, 1).transpose(0, 1)
         U_new = U_new.repeat(alpha.shape[0], 1, 1).transpose(0, 1)
 
@@ -424,7 +445,7 @@ def _control_law(model,
         u = U[i]
         z_new = Z_new[i]
 
-        # if alpha is a column vector, dz and du will be matrices
+        # If alpha is a column vector, dz and du will be matrices
         dz = z_new - z
         du = alpha * k[i]
         if alpha.numel() > 1:
@@ -446,10 +467,12 @@ def _linear_control_law(Z, U, F_z, F_u, k, K, alpha):
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
+
     if alpha.numel() > 1:
-        # make alpha a column vector
+        # Make alpha a column vector
         alpha = alpha.flatten.unsqueeze(-1)
-        # repeat Z_new and U_new (once per alpha)
+
+        # Repeat Z_new and U_new (once per alpha)
         Z_new = Z_new.repeat(alpha.shape[0], 1, 1).transpose(0, 1)
         U_new = U_new.repeat(alpha.shape[0], 1, 1).transpose(0, 1)
 
@@ -479,12 +502,14 @@ def _trajectory_cost(cost, Z, U, encoding=StateEncoding.DEFAULT, cost_opts={}):
     N = torch.tensor(U.shape[0])
     I = torch.arange(N)
     batch_shape = None
+
     Z_run = Z[:-1]
     Z_end = Z[-1]
     if Z.dim() > 2:
         batch_shape = Z.shape[1:-1]
         numel = torch.tensor(batch_shape).prod()
-        # we assume the first dimension is time
+
+        # We assume the first dimension is time
         Z_run = Z_run.reshape(-1, Z.shape[-1])
         Z_end = Z_end.reshape(-1, Z.shape[-1])
         U = U.reshape(-1, U.shape[-1])
@@ -497,4 +522,5 @@ def _trajectory_cost(cost, Z, U, encoding=StateEncoding.DEFAULT, cost_opts={}):
         L = L.reshape(N[0], *batch_shape)
         l_f = l_f.reshape(*batch_shape)
         return L.sum(0) + l_f
+
     return L.sum() + l_f

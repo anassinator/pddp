@@ -42,7 +42,8 @@ class PDDPController(iLQRController):
                  cost,
                  model_opts={},
                  cost_opts={},
-                 training_opts={}):
+                 training_opts={},
+                 **kwargs):
         """Constructs a PDDPController.
 
         Args:
@@ -141,7 +142,6 @@ class PDDPController(iLQRController):
         encoded_state_size = infer_encoded_state_size(self.model.state_size,
                                                       encoding)
         tensor_opts = {"dtype": U.dtype, "device": U.device}
-        K = torch.zeros(N, action_size, encoded_state_size, **tensor_opts)
 
         # Build initial dataset.
         dataset = None
@@ -188,7 +188,7 @@ class PDDPController(iLQRController):
 
                     # Backward pass.
                     try:
-                        k, K_new = backward(
+                        k, K = backward(
                             Z,
                             F_z,
                             F_u,
@@ -205,7 +205,7 @@ class PDDPController(iLQRController):
                         break
 
                     # Batch-backtracking line search.
-                    Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K_new,
+                    Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K,
                                                     alphas, encoding,
                                                     self._model_opts)
                     J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b,
@@ -221,9 +221,9 @@ class PDDPController(iLQRController):
                         if (J_opt - J_new).abs() / J_opt < tol:
                             converged = True
                         J_opt = J_new
-                        Z = Z_new
-                        U = U_new
-                        K = K_new
+                        self._Z_nominal = Z = Z_new
+                        self._U_nominal = U = U_new
+                        self._K = K
 
                         changed = True
                         accepted = True
@@ -283,7 +283,7 @@ class PDDPController(iLQRController):
             if start_from_bestU:
                 U = bestU
 
-        return Z, U, K
+        return Z, U
 
 
 @torch.no_grad()
