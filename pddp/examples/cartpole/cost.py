@@ -15,6 +15,7 @@
 """Cartpole cost."""
 
 import torch
+import numpy as np
 
 from .model import CartpoleDynamicsModel
 
@@ -51,7 +52,7 @@ class CartpoleCost(QRCost):
 
         # Goal is not all zeroes after augmenting the state.
         x_goal = augment_state(
-            torch.zeros(model.state_size), model.angular_indices,
+            torch.tensor([0.0, 0.0, np.pi, 0.0]), model.angular_indices,
             model.non_angular_indices)
 
         super(CartpoleCost, self).__init__(Q, R, Q_term=Q_term, x_goal=x_goal)

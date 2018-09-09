@@ -113,7 +113,7 @@ class _CartPoleEnv(gym.Env):
         return self.state, reward, done, {}
 
     def reset(self):
-        self.state = np.array([0, 0, np.pi, 0])
+        self.state = np.array([0.0, 0.0, 0.0, 0.0])
         self.state += 1e-2 * np.random.randn(*self.state.shape)
         return self.state
 
@@ -173,7 +173,7 @@ class _CartPoleEnv(gym.Env):
                 self.viewer.add_geom(self.axles[i])
 
                 self.carttrans[i].set_translation(cartx, carty)
-                self.poletrans[i].set_rotation(-theta)
+                self.poletrans[i].set_rotation(-theta - np.pi)
 
             self.track = rendering.Line((0, carty), (screen_width, carty))
             self.track.set_color(0, 0, 0)
@@ -185,7 +185,7 @@ class _CartPoleEnv(gym.Env):
             self.poletrans[i].set_rotation(self.poletrans[i + 1].rotation)
 
         self.carttrans[-1].set_translation(cartx, carty)
-        self.poletrans[-1].set_rotation(-theta)
+        self.poletrans[-1].set_rotation(-theta - np.pi)
 
         return self.viewer.render(return_rgb_array=mode == "rgb_array")
 
