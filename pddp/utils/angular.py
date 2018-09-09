@@ -182,16 +182,16 @@ def _augment_covar(m, c, angular_indices, non_angular_indices):
     Dna = len(non_angular_indices)
 
     if m.dim() == 1:
-        Ma = torch.empty(Da, **tensor_opts)
-        Va = torch.empty(Da, Da, **tensor_opts)
+        Ma = torch.zeros(Da, **tensor_opts)
+        Va = torch.zeros(Da, Da, **tensor_opts)
         Ca = torch.zeros(D, Da, **tensor_opts)
-        C = torch.empty(Dna + Da, Dna + Da, **tensor_opts)
+        C = torch.zeros(Dna + Da, Dna + Da, **tensor_opts)
     elif m.dim() == 2:
         N = m.shape[0]
-        Ma = torch.empty(N, Da, **tensor_opts)
-        Va = torch.empty(N, Da, Da, **tensor_opts)
+        Ma = torch.zeros(N, Da, **tensor_opts)
+        Va = torch.zeros(N, Da, Da, **tensor_opts)
         Ca = torch.zeros(N, D, Da, **tensor_opts)
-        C = torch.empty(N, Dna + Da, Dna + Da, **tensor_opts)
+        C = torch.zeros(N, Dna + Da, Dna + Da, **tensor_opts)
     else:
         raise NotImplementedError("Unsupported number of dimensions")
 

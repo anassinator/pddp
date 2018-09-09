@@ -201,24 +201,34 @@ class iLQRController(Controller):
         Returns:
             Optimal action (Tensor<action_size>).
         """
+        if self._Z_nominal is None or self._U_nominal is None or self._K is None:
+            raise RuntimeError("You must `fit()` first")
+
         dz = z - self._Z_nominal[i]
         du = self._K[i].matmul(dz)
         return self._U_nominal[i] + du
 
     def _reset_reg(self):
-        # Reset regularization term.
-        self._mu = 1.0
+        """Resets the regularization parameters."""
+        self._mu = 0.0
         self._delta = self._delta_0
 
     def _decrease_reg(self):
-        # Decrease regularization term.
+        """Decreases the regularization parameters."""
         self._delta = min(1.0, self._delta) / self._delta_0
         self._mu *= self._delta
         if self._mu <= self._mu_min:
             self._mu = 0.0
 
     def _increase_reg(self, max_reg):
-        # Increase regularization term.
+        """Increases the regularization parameters.
+
+        Args:
+            max_reg (float): Maximum regularization term.
+
+        Returns:
+            Whether the maximum regularization term has been exceeded (bool).
+        """
         self._delta = max(1.0, self._delta) * self._delta_0
         self._mu = max(self._mu_min, self._mu * self._delta)
         if self._mu >= max_reg:
@@ -360,8 +370,17 @@ def Q(F_z, F_u, L_z, L_u, L_zz, L_uz, L_uu, V_z, V_zz):
 
 
 @torch.no_grad()
-def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0,
-             V_zz_reg=True):
+def backward(Z,
+             F_z,
+             F_u,
+             L,
+             L_z,
+             L_u,
+             L_zz,
+             L_uz,
+             L_uu,
+             reg=0.0,
+             V_zz_reg=False):
     """Evaluates the backward pass.
 
     Args:
@@ -380,13 +399,16 @@ def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0,
             path w.r.t. action and encoded state.
         L_uu (Tensor<N+1, action_size, action_size>): Hessian of cost path
             w.r.t. action.
-        reg (float): Regularization term to guarantee V_zz
-            positive-definiteness.
+        reg (float): Regularization term to guarantee positive-definiteness.
+        V_zz_reg (bool): Whether to regularize V_zz instead of Q_uu directly.
 
     Returns:
         Tuple of
             k (Tensor<N, action_size>): Feedforward gains.
             K (Tensor<N, action_size, encoded_state_size>): Feedback gains.
+
+    Raises:
+        RuntimeError: If Q_uu is not positive-definite.
     """
     V_z = L_z[-1]
     V_zz = L_zz[-1]
@@ -431,6 +453,9 @@ def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0,
             Q_uu_inv = (E_uu / e_uu).mm(E_uu.t())
             Q_uz_u = torch.cat([Q_u.unsqueeze(1), Q_uz], dim=-1)
             kK = -Q_uu_inv.mm(Q_uz_u)
+            if torch.isnan(kK).any():
+                raise RuntimeError("non-positive definite matrix")
+
             k[i] = kK[:, 0]
             K[i] = kK[:, 1:]
 
