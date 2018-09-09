@@ -168,7 +168,6 @@ def boxqp(x0,
     result = 0
     old_f = 0
     gnorm = 0
-    n_factor = 1
     clamped = torch.zeros(D, dtype=torch.uint8)
     free = torch.ones(D, dtype=torch.uint8)
     Ufree = torch.zeros(D)
@@ -199,7 +198,7 @@ def boxqp(x0,
         old_clamped = clamped.clone()
         clamped[:] = 0
         clamped[(x == lower) * (g > 0)] = 1
-        clamped[(x == upper) * (g > 0)] = 1
+        clamped[(x == upper) * (g < 0)] = 1
         free = 1 - clamped
 
         # check if all clamped
@@ -215,14 +214,13 @@ def boxqp(x0,
 
         if factorize:
             # get  free dimensions
-            Dfree = free.sum()
-            Qfree = Q[free * free.unsqueeze(1)].reshape(Dfree, Dfree)
+            Qfree = Q[free][:, free]
             # factorize
             try:
                 Ufree = Qfree.potrf()
-                n_factor += 1
             except RuntimeError:
                 if not quiet:
+                    print 'Qfree not positive definite:\n', Qfree
                     traceback.print_exc()
                 result = -1
                 break
@@ -240,7 +238,7 @@ def boxqp(x0,
 
         # check if descent direction
         sdotg = (search * g).sum()
-        if sdotg > 0:
+        if sdotg > 0 and not quiet:
             print("BoxQP didn't find a descent direction (Should not happen)")
             break
 
