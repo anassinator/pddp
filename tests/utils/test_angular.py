@@ -13,9 +13,11 @@ INDICES = [
     (torch.tensor([]).long(), torch.tensor([0, 1, 2, 3, 4]).long()),
     (torch.tensor([2]).long(), torch.tensor([0, 1, 3, 4]).long()),
     (torch.tensor([1, 3]).long(), torch.tensor([0, 2, 4]).long()),
+    (torch.tensor([1, 3, 4]).long(), torch.tensor([0, 2]).long()),
+    (torch.tensor([1, 2, 3, 4]).long(), torch.tensor([0]).long()),
     (torch.tensor([0, 1, 2, 3, 4]).long(), torch.tensor([]).long()),
 ]
-AUGMENTED_SIZES = [5, 6, 7, 10]
+AUGMENTED_SIZES = [5, 6, 7, 8, 9, 10]
 
 
 @pytest.mark.parametrize("indices, augmented_size", zip(INDICES,
@@ -57,3 +59,9 @@ def test_augment_reduce_state(indices, augmented_size):
     Y_ = augment_encoded_state(
         Z, *indices, encoding=StateEncoding.VARIANCE_ONLY)
     assert Y_[..., :augmented_size].allclose(Y)
+
+    torch.autograd.gradcheck(augment_state, (X.double(), *indices))
+    torch.autograd.gradcheck(reduce_state, (Y.double(), *indices))
+    torch.autograd.gradcheck(
+        augment_encoded_state,
+        (Z.double(), indices[0], indices[1], StateEncoding.VARIANCE_ONLY))
