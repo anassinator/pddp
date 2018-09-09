@@ -58,7 +58,7 @@ def test_fit(env_class, model_class, cost_class, encoding, N):
     controller = PDDPController(env, model, cost)
 
     controller.eval()
-    Z, U, K = controller.fit(U, encoding=encoding)
+    Z, U = controller.fit(U, encoding=encoding)
 
     controller.train()
-    Z, U, K = controller.fit(U, encoding=encoding, max_var=np.inf)
+    Z, U = controller.fit(U, encoding=encoding, max_var=np.inf)
