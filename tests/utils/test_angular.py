@@ -60,8 +60,9 @@ def test_augment_reduce_state(indices, augmented_size):
         Z, *indices, encoding=StateEncoding.VARIANCE_ONLY)
     assert Y_[..., :augmented_size].allclose(Y)
 
-    torch.autograd.gradcheck(augment_state, (X.double(), *indices))
-    torch.autograd.gradcheck(reduce_state, (Y.double(), *indices))
+    torch.autograd.gradcheck(augment_state,
+                             (X.double(), indices[0], indices[1]))
+    torch.autograd.gradcheck(reduce_state, (Y.double(), indices[0], indices[1]))
     torch.autograd.gradcheck(
         augment_encoded_state,
         (Z.double(), indices[0], indices[1], StateEncoding.VARIANCE_ONLY))
