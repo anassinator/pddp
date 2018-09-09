@@ -79,7 +79,14 @@ def test_forward_backward(model_class, cost_class, encoding, N):
     assert Q_uu.shape == (model.action_size, model.action_size)
 
     # BACKWARD PASS
-    k, K = backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu)
+    reg = 1.0
+    while reg <= 1e10:
+        try:
+            k, K = backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=reg)
+            break
+        except RuntimeError:
+            reg *= 10
+            continue
 
     assert k.shape == (N, model.action_size)
     assert K.shape == (N, model.action_size, encoded_state_size)
