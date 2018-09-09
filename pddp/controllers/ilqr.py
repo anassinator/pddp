@@ -333,13 +333,16 @@ def Q(F_z, F_u, L_z, L_u, L_zz, L_uz, L_uu, V_z, V_zz):
     Q_z = L_z + F_z.t().matmul(V_z)
     Q_u = L_u + F_u.t().matmul(V_z)
     Q_zz = L_zz + F_z.t().mm(V_zz).mm(F_z)
+    Q_zz = 0.5 * (Q_zz + Q_zz.t())  # To maintain symmetry.
     Q_uz = L_uz + F_u.t().mm(V_zz).mm(F_z)
     Q_uu = L_uu + F_u.t().mm(V_zz).mm(F_u)
+    Q_uu = 0.5 * (Q_uu + Q_uu.t())  # To maintain symmetry.
     return Q_z, Q_u, Q_zz, Q_uz, Q_uu
 
 
 @torch.no_grad()
-def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0):
+def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0,
+             V_zz_reg=True):
     """Evaluates the backward pass.
 
     Args:
@@ -376,25 +379,45 @@ def backward(Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=0.0):
     k = torch.empty(N, action_size, **tensor_opts)
     K = torch.empty(N, action_size, encoded_state_size, **tensor_opts)
 
-    reg = reg * torch.eye(encoded_state_size, **tensor_opts)
+    if V_zz_reg:
+        reg = reg * torch.eye(encoded_state_size, **tensor_opts)
 
-    for i in range(N - 1, -1, -1):
-        Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i], L_zz[i],
-                                       L_uz[i], L_uu[i], V_z, V_zz + reg)
+        for i in range(N - 1, -1, -1):
+            Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i],
+                                           L_zz[i], L_uz[i], L_uu[i], V_z,
+                                           V_zz + reg)
 
-        Q_uu_chol = Q_uu.potrf()
-        Q_uz_u = torch.cat([Q_u.unsqueeze(1), Q_uz], dim=-1)
-        kK = -Q_uz_u.potrs(Q_uu_chol)
-        k[i] = kK[:, 0]
-        K[i] = kK[:, 1:]
+            Q_uu_chol = Q_uu.potrf()
+            Q_uz_u = torch.cat([Q_u.unsqueeze(1), Q_uz], dim=-1)
+            kK = -Q_uz_u.potrs(Q_uu_chol)
+            k[i] = kK[:, 0]
+            K[i] = kK[:, 1:]
 
-        V_z = Q_z + K[i].t().matmul(Q_u)
-        V_z += K[i].t().mm(Q_uu).matmul(k[i])
-        V_z += Q_uz.t().matmul(k[i])
+            V_z = Q_z + K[i].t().matmul(Q_u)
+            V_z += K[i].t().mm(Q_uu).matmul(k[i])
+            V_z += Q_uz.t().matmul(k[i])
 
-        V_zz = Q_zz + K[i].t().mm(Q_uu).mm(K[i])
-        V_zz += K[i].t().mm(Q_uz) + Q_uz.t().mm(K[i])
-        V_zz = 0.5 * (V_zz + V_zz.t())  # To maintain symmetry.
+            V_zz = Q_zz + K[i].t().mm(Q_uu).mm(K[i])
+            V_zz += K[i].t().mm(Q_uz) + Q_uz.t().mm(K[i])
+            V_zz = 0.5 * (V_zz + V_zz.t())  # To maintain symmetry.
+    else:
+        for i in range(N - 1, -1, -1):
+            Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i],
+                                           L_zz[i], L_uz[i], L_uu[i], V_z, V_zz)
+
+            e_uu, E_uu = Q_uu.eig(True)
+            e_uu = e_uu[:, 0]
+            e_uu[e_uu < 0] = 0
+            e_uu += reg
+            Q_uu_inv = (E_uu / e_uu).mm(E_uu.t())
+            Q_uz_u = torch.cat([Q_u.unsqueeze(1), Q_uz], dim=-1)
+            kK = -Q_uu_inv.mm(Q_uz_u)
+            k[i] = kK[:, 0]
+            K[i] = kK[:, 1:]
+
+            V_z = Q_z + Q_uz.t().matmul(k[i])
+            V_zz = Q_zz + Q_uz.t().mm(K[i])
+            V_zz = 0.5 * (V_zz + V_zz.t())  # To maintain symmetry.
 
     return k, K
 
