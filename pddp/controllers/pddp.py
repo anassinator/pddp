@@ -77,13 +77,15 @@ class PDDPController(iLQRController):
             max_trials=None,
             n_sample_trajectories=1,
             n_initial_sample_trajectories=2,
-            sampling_noise=1e-2,
+            sampling_noise=1.0,
             train_on_start=True,
             concatenate_datasets=True,
             max_dataset_size=1000,
             start_from_bestU=True,
             resample_model=True,
             apply_feedback_control=False,
+            u_min=None,
+            u_max=None,
             **kwargs):
         """Determines the optimal path to minimize the cost.
 
@@ -181,8 +183,16 @@ class PDDPController(iLQRController):
                     # Forward rollout.
                     if changed:
                         Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                            z0, U, self.model, self.cost, encoding,
-                            batch_rollout, self._model_opts, self._cost_opts)
+                            z0,
+                            U,
+                            self.model,
+                            self.cost,
+                            encoding,
+                            batch_rollout,
+                            self._model_opts,
+                            self._cost_opts,
+                            u_min=u_min,
+                            u_max=u_max)
                         J_opt = L.sum()
                         changed = False
 
@@ -198,16 +208,27 @@ class PDDPController(iLQRController):
                             L_zz,
                             L_uz,
                             L_uu,
-                            reg=self._mu)
+                            reg=self._mu,
+                            u_min=u_min,
+                            u_max=u_max,
+                            U=U)
                     except RuntimeError:
                         if self._increase_reg(max_reg):
                             continue
                         break
 
                     # Batch-backtracking line search.
-                    Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K,
-                                                    alphas, encoding,
-                                                    self._model_opts)
+                    Z_new_b, U_new_b = _control_law(
+                        self.model,
+                        Z,
+                        U,
+                        k,
+                        K,
+                        alphas,
+                        encoding,
+                        self._model_opts,
+                        u_min=u_min,
+                        u_max=u_max)
                     J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b,
                                                encoding, self._cost_opts)
                     amin = J_new_b.argmin()
