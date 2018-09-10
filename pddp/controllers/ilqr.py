@@ -482,8 +482,8 @@ def backward(Z,
                     k_ip1, Q_uu, Q_u, lower, upper, quiet=True)
 
                 if result < 1:
-                    raise RuntimeError(
-                        "BoxQP failed: %s" % BOXQP_RESULTS[result])
+                    raise RuntimeError("BoxQP failed: {}".format(
+                        BOXQP_RESULTS[result]))
 
                 # compute feedback matrix
                 if any(free):

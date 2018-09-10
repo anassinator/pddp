@@ -16,9 +16,6 @@
 
 from .env import CartpoleEnv
 from .cost import CartpoleCost
-from .model import CartpoleDynamicsModel, ConstrainedCartpoleDynamicsModel
+from .model import CartpoleDynamicsModel
 
-__all__ = [
-    "CartpoleCost", "CartpoleDynamicsModel", "CartpoleEnv",
-    "ConstrainedCartpoleDynamicsModel"
-]
+__all__ = ["CartpoleCost", "CartpoleDynamicsModel", "CartpoleEnv"]

@@ -14,6 +14,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Constraint utilities."""
 
+from __future__ import print_function
+
 import torch
 import traceback
 from .encoding import StateEncoding
@@ -26,7 +28,7 @@ BOXQP_RESULTS = {
     3: 'No bounds, returning Newton point',
     4: 'Improvement smaller than tolerance',
     5: 'Gradient norm smaller than tolerance',
-    6: 'All dimensions are clamped'
+    6: 'All dimensions are clamped',
 }
 
 
@@ -220,7 +222,7 @@ def boxqp(x0,
                 Ufree = Qfree.potrf()
             except RuntimeError:
                 if not quiet:
-                    print 'Qfree not positive definite:\n', Qfree
+                    print('Qfree not positive definite:\n', Qfree)
                     traceback.print_exc()
                 result = -1
                 break
@@ -260,5 +262,5 @@ def boxqp(x0,
         x = xc
         f = fc
     if not quiet:
-        print BOXQP_RESULTS[result], 'n_iter: %d' % i
+        print(BOXQP_RESULTS[result], 'n_iter: {}'.format(i))
     return x, result, Ufree, free

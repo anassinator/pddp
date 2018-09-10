@@ -36,8 +36,7 @@ from ...utils.constraint import constrain
 from ...utils.classproperty import classproperty
 from ...utils.encoding import (StateEncoding, decode_mean, decode_std,
                                decode_covar_sqrt, encode)
-from ...utils.angular import (augment_state, augment_state,
-                              infer_augmented_state_size, reduce_state)
+from ...utils.angular import augment_state, infer_augmented_state_size
 
 
 def bnn_dynamics_model_factory(state_size,
@@ -309,8 +308,7 @@ def bnn_dynamics_model_factory(state_size,
 
             Returns:
                 Next encoded state distribution
-                    (Tensor<..., encoded_state_size>) or next samples
-                    (Tensor<n_particles, ..., state_size>).
+                    (Tensor<..., encoded_state_size>).
             """
             mean = decode_mean(z, encoding)
             X = mean.expand(self.n_particles, *mean.shape)

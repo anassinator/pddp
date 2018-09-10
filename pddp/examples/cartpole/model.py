@@ -19,7 +19,6 @@ import torch
 from torch.nn import Parameter
 
 from ...models.base import DynamicsModel
-from ...utils.constraint import constrain_model
 from ...utils.classproperty import classproperty
 from ...utils.angular import augment_state, reduce_state
 from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
@@ -136,6 +135,3 @@ class CartpoleDynamicsModel(DynamicsModel):
             dim=-1)
 
         return encode(mean, V=var, encoding=encoding)
-
-
-ConstrainedCartpoleDynamicsModel = CartpoleDynamicsModel
