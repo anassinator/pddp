@@ -19,6 +19,8 @@ DT = 0.1  # Time step (s).
 PLOT = True  # Whether to plot or not.
 RENDER = True  # Whether to render the environment or not.
 ENCODING = pddp.StateEncoding.DEFAULT
+UMIN = torch.tensor([-10.0])
+UMAX = torch.tensor([10.0])
 
 
 def plot_loss(J_hist):
@@ -120,7 +122,7 @@ if __name__ == "__main__":
         model_class.non_angular_indices,
     )(n_particles=100)
 
-    U = torch.randn(N, model.action_size)
+    U = (UMAX-UMIN)*torch.rand(N, model.action_size) + UMIN
     controller = pddp.controllers.PDDPController(
         env,
         model,
@@ -130,7 +132,7 @@ if __name__ == "__main__":
             "infer_noise_variables": True
         },
         training_opts={
-            "n_iter": 1000,
+            "n_iter": 2000,
             "learning_rate": 1e-3,
         },
     )
@@ -145,7 +147,9 @@ if __name__ == "__main__":
         on_trial=on_trial,
         max_J=0,
         max_trials=20,
-        start_from_bestU=True)
+        sampling_noise=1e-1,
+        start_from_bestU=True,
+        u_min=UMIN, u_max=UMAX)
 
     plt.figure()
     plot_loss(J_hist)
