@@ -325,6 +325,7 @@ def bnn_dynamics_model_factory(state_size,
                     self.eps_in[i] = eps
 
                 L = decode_covar_sqrt(z, encoding)
+                should_expand = i == 0
                 if infer_noise_variables and i > 0:
                     deltas = self.output[i - 1] - mean
                     if not identical_inputs and X.dim() == 3:
@@ -340,11 +341,13 @@ def bnn_dynamics_model_factory(state_size,
                             L_ = L
                         eps = torch.trtrs(
                             deltas.t(), L_, transpose=True)[0].t().detach()
+                        should_expand = True
                 else:
                     eps = self.eps_in[i]
+                    should_expand = True
 
                 if X.dim() == 3:
-                    if identical_inputs or i == 0:
+                    if should_expand:
                         eps = eps.unsqueeze(1).repeat(1, X.shape[1], 1)
                     X = X + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
                 else:
