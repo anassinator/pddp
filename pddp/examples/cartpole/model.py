@@ -111,7 +111,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         x_dot = mean[..., 1]
         theta = mean[..., 2]
         theta_dot = mean[..., 3]
-        F = u.flatten()
+        F = u[..., 0]
 
         sin_theta = theta.sin()
         cos_theta = theta.cos()
@@ -128,9 +128,9 @@ class CartpoleDynamicsModel(DynamicsModel):
         mean = torch.stack(
             [
                 x + x_dot * dt,
-                x_dot + x_dot_dot.view(x_dot.shape) * dt,
+                x_dot + x_dot_dot * dt,
                 theta + theta_dot * dt,
-                theta_dot + theta_dot_dot.view(theta_dot.shape) * dt,
+                theta_dot + theta_dot_dot * dt,
             ],
             dim=-1)
 

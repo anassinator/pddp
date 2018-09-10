@@ -106,7 +106,7 @@ class PendulumDynamicsModel(DynamicsModel):
 
         theta = mean[..., 0]
         theta_dot = mean[..., 1]
-        torque = u.flatten()
+        torque = u[..., 0]
 
         # Define acceleration.
         temp = m * l
@@ -115,8 +115,7 @@ class PendulumDynamicsModel(DynamicsModel):
 
         mean = torch.stack(
             [
-                theta + theta_dot.view(theta.shape) * dt,
-                theta_dot + theta_dot_dot.view(theta_dot.shape) * dt,
-            ],
-            dim=-1)
+                theta + theta_dot * dt,
+                theta_dot + theta_dot_dot * dt,
+            ], dim=-1)
         return encode(mean, V=var, encoding=encoding)
