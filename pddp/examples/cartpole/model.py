@@ -35,7 +35,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         theta: 0 is pointing up and increasing clockwise.
     """
 
-    def __init__(self, dt, mc=0.5, mp=0.5, l=0.5, mu=0.1, g=9.80665):
+    def __init__(self, dt, mc=0.5, mp=0.5, l=0.5, mu=0.1, g=9.82):
         """Constructs a CartpoleDynamicsModel.
 
         Args:
@@ -138,5 +138,4 @@ class CartpoleDynamicsModel(DynamicsModel):
         return encode(mean, V=var, encoding=encoding)
 
 
-ConstrainedCartpoleDynamicsModel = \
-    constrain_model(-10.0, 10.0)(CartpoleDynamicsModel)
+ConstrainedCartpoleDynamicsModel = CartpoleDynamicsModel
