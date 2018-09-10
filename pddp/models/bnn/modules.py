@@ -201,7 +201,6 @@ def bnn_dynamics_model_factory(state_size,
                     i,
                     resample=False,
                     use_predicted_std=False,
-                    infer_noise_variables=True,
                     **kwargs):
             """Dynamics model function.
 
@@ -210,8 +209,6 @@ def bnn_dynamics_model_factory(state_size,
                 u (Tensor<..., action_size>): Action vector(s).
                 i (Tensor<...>): Time index.
                 resample (bool): Whether to force resample.
-                sample_input_distribution (bool): Whether to sample particles
-                    from the input distribution or simply use their mean.
                 use_predicted_std (bool): Whether to use the predicted standard
                     deviations in the inference or not.
 
