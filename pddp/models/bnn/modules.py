@@ -255,7 +255,9 @@ def bnn_dynamics_model_factory(state_size,
                 if X.dim() == 3:
                     eps = eps.unsqueeze(0).repeat(dx.shape[0], 1, 1)
 
-                noise_std = torch.min(log_std.exp(), dx.std(dim=0))
+                noise_std = log_std.exp()
+                # make noise independent (i.e. not something iLQR can optimize)
+                noise_std = noise_std.detach()
                 dx = dx + noise_std * eps
 
             return X + dx
