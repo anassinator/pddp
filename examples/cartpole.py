@@ -122,7 +122,7 @@ if __name__ == "__main__":
         model_class.non_angular_indices,
     )(n_particles=100)
 
-    U = (UMAX-UMIN)*torch.rand(N, model.action_size) + UMIN
+    U = (UMAX - UMIN) * torch.rand(N, model.action_size) + UMIN
     controller = pddp.controllers.PDDPController(
         env,
         model,
@@ -149,7 +149,8 @@ if __name__ == "__main__":
         max_trials=20,
         sampling_noise=1e-1,
         start_from_bestU=True,
-        u_min=UMIN, u_max=UMAX)
+        u_min=UMIN,
+        u_max=UMAX)
 
     plt.figure()
     plot_loss(J_hist)
