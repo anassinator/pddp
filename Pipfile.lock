@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "737d21e140291564acdef37a10146017910594076ec91e43fd72fc700f9bc19e"
+            "sha256": "ecb9971952198702802ab3d1b387d5609707ec9c11031fc2d0469f050fdb51ee"
         },
         "pipfile-spec": 6,
         "requires": {},
@@ -43,6 +43,10 @@
                 "sha256:e39ced1ab767b5936646cedba8bcce582398233d6a627067d4c6a454c90cfedb"
             ],
             "version": "==0.16.0"
+        },
+        "gpytorch": {
+            "git": "https://github.com/cornellius-gp/gpytorch.git",
+            "ref": "004897e"
         },
         "gym": {
             "hashes": [

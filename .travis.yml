@@ -6,6 +6,7 @@ cache: pip
 install:
   - pip install pipenv
   - pip install $(pipenv lock --dev -r)
+  - pip install 'git+https://github.com/cornellius-gp/gpytorch.git@004897e#egg=gpytorch'
   - python setup.py install
 script:
   - pytest --benchmark-skip -vv

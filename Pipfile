@@ -10,6 +10,7 @@ six = ">=1.11.0"
 torch = "==0.4.1"
 tqdm = "==4.25.*"
 "enum34" = "*"
+gpytorch = {git = "https://github.com/cornellius-gp/gpytorch.git", ref = "004897e"}
 
 [dev-packages]
 yapf = "==0.22.0"
