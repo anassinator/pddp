@@ -197,13 +197,12 @@ def decode_covar(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             return other.diag().pow(2)
         elif other.dim() == 2:
             # TODO: Remove for-loop.
-            return torch.stack([x.diag().pow(2) for x in other])
+            return torch.stack([x.diag() for x in other.pow(2)])
         else:
             raise NotImplementedError("Expected a 1D or 2D tensor")
     elif encoding == StateEncoding.IGNORE_UNCERTAINTY:
         # Hard-code a unit normal distribution.
-        C = 1e-6 * torch.eye(
-            state_size, state_size, dtype=Z.dtype, device=Z.device)
+        C = 1e-6 * torch.eye(state_size, dtype=Z.dtype, device=Z.device)
 
         if Z.dim() == 1:
             pass
@@ -332,7 +331,7 @@ def decode_covar_sqrt(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             return other.diag().sqrt()
         elif other.dim() == 2:
             # TODO: Remove for-loop.
-            return torch.stack([x.diag().sqrt() for x in other])
+            return torch.stack([x.diag() for x in other.sqrt()])
         else:
             raise NotImplementedError("Expected a 1D or 2D tensor")
     elif encoding == StateEncoding.STANDARD_DEVIATION_ONLY:
@@ -345,8 +344,7 @@ def decode_covar_sqrt(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             raise NotImplementedError("Expected a 1D or 2D tensor")
     elif encoding == StateEncoding.IGNORE_UNCERTAINTY:
         # Hard-code a unit normal distribution.
-        L = 1e-3 * torch.eye(
-            state_size, state_size, dtype=Z.dtype, device=Z.device)
+        L = 1e-3 * torch.eye(state_size, dtype=Z.dtype, device=Z.device)
 
         if Z.dim() == 1:
             pass
