@@ -201,6 +201,7 @@ def bnn_dynamics_model_factory(state_size,
                     i,
                     resample=False,
                     use_predicted_std=False,
+                    independent_noise=False,
                     **kwargs):
             """Dynamics model function.
 
@@ -253,8 +254,9 @@ def bnn_dynamics_model_factory(state_size,
                     eps = eps.unsqueeze(0).repeat(dx.shape[0], 1, 1)
 
                 noise_std = log_std.exp()
-                # make noise independent (i.e. not something iLQR can optimize)
-                noise_std = noise_std.detach()
+                if independent_noise:
+                    # make noise independent (i.e. not something iLQR can optimize)
+                    noise_std = noise_std.detach()
                 dx = dx + noise_std * eps
 
             return X + dx
@@ -597,7 +599,157 @@ class CDropout(BDropout):
         Returns:
             Module representation (str).
         """
-        return "temperature={}".format(self.temperature)
+        return 'rate={}, temperature={}, regularizer_scale={}'.format(
+            1 - self.logit_p.sigmoid(), self.temperature, self.reg)
+
+
+def phi(x):
+    return 0.5 * (1 + torch.erf(x / np.sqrt(2)))
+
+
+def inv_phi(y):
+    return torch.erfinv(2 * y - 1) * np.sqrt(2)
+
+
+class TLNDropout(BDropout):
+
+    """ Truncated Log-Normal Dropout
+        http://papers.nips.cc/paper/7254-structured-bayesian-pruning-via-log-normal-multiplicative-noise.pdf
+    """
+
+    def __init__(self, interval=torch.tensor([-4.0, 0.0]), reg=1.0, **kwargs):
+        """Constructs a TLNDropout layer.
+
+        Args:
+            mean (float): init.
+            rate (float): Initial dropout rate.
+            reg (float): Regularization scale.
+        """
+        super(TLNDropout, self).__init__(0.5, reg, **kwargs)
+        self.logit_posterior_mean = Parameter(torch.tensor([0.0]))
+        self.logit_posterior_std = Parameter(torch.tensor([0.0]))
+        self.register_buffer('interval', torch.tensor(interval))
+        a, b = self.interval
+        uniform_std = np.sqrt(((b - a)**2) / 12.0)
+        self.register_buffer('s_interval', torch.tensor([1e-2, uniform_std]))
+        self.tln_noise = None
+
+    def init_params(self, input_shape):
+        """Initializes the posterior parameters given an input shape
+        """
+        # initialize close to 0 (weights close to 1),
+        # but within range (a, b)
+        a, b = self.interval
+        mu0 = max(a + 1e-2 * (b - a), 0) + min(b - 1e-2 * (b - a), 0)
+        logit_mu0 = -torch.log((b - a) / (mu0 - a) - 1)
+        self.logit_posterior_mean.data = torch.tensor(logit_mu0).repeat(
+            *input_shape)
+
+        # set posterior_std close to the minimum
+        self.logit_posterior_std.data = torch.zeros(*input_shape).uniform_(
+            -3.0, -1.0)
+
+    def regularization(self, *args, **kwargs):
+        """Computes the regularization cost.
+
+        Args:
+            None
+
+        Returns:
+            Regularization cost (Tensor).
+        """
+        # this regularizer is independent of the weight values
+        a, b = self.interval
+        s_min, s_max = self.s_interval
+        mu = (b - a) * (self.logit_posterior_mean).sigmoid() + a
+        sigma = (s_max - s_min) * (self.logit_posterior_std).sigmoid() + s_min
+        alpha = (a - mu) / sigma
+        beta = (b - mu) / sigma
+        phi_alpha = phi(alpha)
+        Z = phi(beta) - phi_alpha
+        reg = (torch.log(b - a) - torch.log(sigma * np.sqrt(2 * np.pi)) -
+               torch.log(Z) - (
+                   (alpha * phi(alpha) - beta * phi(beta)) / sigma) / (2 * Z))
+        return self.reg * reg.sum()
+
+    def _update_noise(self, x):
+        """Updates the dropout noise.
+
+        Args:
+            x (Tensor): Input.
+        """
+        self.noise.data = torch.zeros_like(x).uniform_(1e-5, 1 - 1e-5)
+
+    def _update_tln_noise(self, noise):
+        """Updates the truncated log normal dropout masks.
+
+        Args:
+            noise (Tensor): Input.
+        """
+        a, b = self.interval
+        s_min, s_max = self.s_interval
+
+        # posterior params
+        mu = (b - a) * (self.logit_posterior_mean).sigmoid() + a
+        sigma = (s_max - s_min) * (self.logit_posterior_std).sigmoid() + s_min
+
+        # transform noise  to truncated lognormal samples
+        # noise should come from a U[0, 1] distribution
+        alpha = (a - mu) / sigma
+        beta = (b - mu) / sigma
+        phi_alpha = phi(alpha)
+        Z = phi(beta) - phi_alpha
+        p = phi_alpha + Z * noise
+        iphi = inv_phi(p)
+        self.tln_noise = (mu + sigma * iphi).exp()
+
+    def forward(self, x, resample=False, mask_dims=2, **kwargs):
+        """Applies the dropout masks
+
+        Args:
+            x (Tensor): Input.
+            resample (bool): Whether to force resample.
+            mask_dims (int): Number of dimensions to sample noise for
+                (0 for all).
+
+        Returns:
+            Output (Tensor).
+        """
+        sample_shape = x.shape[-mask_dims:]
+        noise = self.noise
+        resampled = False
+        # initialize parameters if they haven't been already
+        if self.logit_posterior_mean.shape[-1] != x.shape[-1]:
+            self.init_params(x.shape[-1:])
+
+        #resample is requested
+        if resample:
+            noise = torch.rand_like(x)
+            resampled = True
+        elif (self.tln_noise is None or sample_shape != self.tln_noise.shape):
+            sample = x.view(-1, *sample_shape)[0]
+            self._update_noise(sample)
+            noise = self.noise
+            resampled = True
+
+        if self.training:
+            self._update_tln_noise(noise)
+            tln_noise = self.tln_noise
+        else:
+            if resampled:
+                self._update_tln_noise(noise)
+            # We never need these gradients in evaluation mode.
+            tln_noise = self.tln_noise.detach()
+        return x * tln_noise
+
+    def extra_repr(self):
+        """Formats module representation.
+
+        Returns:
+            Module representation (str).
+        """
+        return "interval={}, s_interval={}, regularizer scale={}".format(
+            self.interval, self.s_interval, self.reg)
 
 
 class BSequential(torch.nn.Sequential):
@@ -697,7 +849,7 @@ def bayesian_model(in_features,
     for i, (din, dout) in enumerate(zip(dims[:-1], dims[1:])):
         drop_i = dropout_layers[i]
         if inspect.isclass(drop_i):
-            drop_i = drop_i(p=initial_p)
+            drop_i = drop_i(rate=initial_p)
 
         modules["fc_{}".format(i)] = torch.nn.Linear(din, dout)
         if drop_i is not None:
