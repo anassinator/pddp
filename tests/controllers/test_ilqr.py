@@ -102,7 +102,8 @@ def test_fit(env_class, model_class, cost_class, encoding, N):
     _, U, model, cost = _setup(model_class, cost_class, encoding, N)
     controller = iLQRController(env, model, cost)
 
-    Z, U = controller.fit(U, encoding=encoding)
+    Z, U, state = controller.fit(U, encoding=encoding)
+    assert state.is_terminal()
 
 
 @pytest.mark.parametrize("N", [1, 3])
@@ -120,4 +121,4 @@ def test_benchmark_backward(benchmark, model_class, cost_class, encoding, N):
     z0, U, model, cost = _setup(model_class, cost_class, encoding, N)
     Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
         z0, U, model, cost, encoding)
-    benchmark(backward, Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu)
+    benchmark(backward, Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, reg=1e2)

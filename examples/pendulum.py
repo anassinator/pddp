@@ -94,7 +94,7 @@ if __name__ == "__main__":
         plt.title("Trial {}".format(trial + 1))
         plot_path(X, encoding=pddp.StateEncoding.IGNORE_UNCERTAINTY)
 
-    def on_iteration(iteration, Z, U, J_opt, accepted, converged):
+    def on_iteration(iteration, state, Z, U, J_opt):
         J_hist.append(J_opt.detach().numpy())
 
         if iteration % 10 == 9 or iteration == 0:
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     )
 
     controller.train()
-    Z, U = controller.fit(
+    Z, U, state = controller.fit(
         U,
         encoding=ENCODING,
         n_iterations=200,

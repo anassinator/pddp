@@ -23,15 +23,10 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     from tqdm.autonotebook import trange
 
-from torch.utils.data import TensorDataset
-
 from .base import Controller
-from .ilqr import (iLQRController, forward, backward, Q, _linear_control_law,
-                   _control_law, _trajectory_cost)
+from .ilqr import iLQRController, iLQRState
 
-from ..utils.evaluation import eval_cost, eval_dynamics
-from ..utils.encoding import (StateEncoding, decode_mean, decode_var,
-                              infer_encoded_state_size)
+from ..utils.encoding import StateEncoding, decode_var
 
 
 class PDDPController(iLQRController):
@@ -93,22 +88,11 @@ class PDDPController(iLQRController):
             max_reg (Tensor<0>): Maximum regularization term.
             batch_rollout (bool): Whether to rollout in parallel or not.
             quiet (bool): Whether to print anything to screen or not.
-            on_iteration (callable): Function with the following signature:
-                Args:
-                    iteration (int): Iteration index.
-                    Z (Tensor<N+1, encoded_state_size>): Iteration's encoded
-                        state path.
-                    U (Tensor<N, action_size>): Iteration's action path.
-                    J_opt (Tensor<0>): Iteration's total cost to-go.
-                    accepted (bool): Whether the iteration was accepted or not.
-                    converged (bool): Whether the iteration converged or not.
             on_trial (callable): Function with the following signature:
                 Args:
                     trial (int): Trial index.
                     X (Tensor<N+1, state_size>): Trial's state path.
                     U (Tensor<N, action_size>): Trial's action path.
-            linearize_dynamics (bool): Whether to linearize the dynamics when
-                computing the control law.
             max_var (Tensor<0>): Maximum variance allowed before resampling
                 trajectories.
             max_J (Tensor<0>): Maximum cost to converge.
@@ -132,14 +116,13 @@ class PDDPController(iLQRController):
             Tuple of:
                 Z (Tensor<N+1, encoded_state_size>): Optimal encoded state path.
                 U (Tensor<N, action_size>): Optimal action path.
+                state (iLQRState): Final optimization state.
         """
         U = U.detach()
         bestU = U
         bestJ = np.inf
         N, action_size = U.shape
-        encoded_state_size = infer_encoded_state_size(self.model.state_size,
-                                                      encoding)
-        tensor_opts = {"dtype": U.dtype, "device": U.device}
+        state = iLQRState.UNDEFINED
 
         # Build initial dataset.
         dataset = None
@@ -159,7 +142,7 @@ class PDDPController(iLQRController):
                 # Use different random numbers each episode.
                 self.model.resample()
 
-            Z, U = super(PDDPController, self).fit(
+            Z, U, state = super(PDDPController, self).fit(
                 U,
                 encoding=encoding,
                 quiet=quiet,
@@ -170,7 +153,7 @@ class PDDPController(iLQRController):
             if not self.training:
                 break
 
-            if self.converged:
+            if state.is_terminal():
                 # Check if uncertainty is satisfactory.
                 var = decode_var(Z, encoding=encoding).max()
                 if var < max_var:
@@ -199,7 +182,7 @@ class PDDPController(iLQRController):
             if start_from_bestU:
                 U = bestU
 
-        return Z, U
+        return Z, U, state
 
 
 @torch.no_grad()

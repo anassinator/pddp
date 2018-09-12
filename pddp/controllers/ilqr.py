@@ -23,20 +23,44 @@ with warnings.catch_warnings():
     from tqdm.autonotebook import trange
 
 from enum import IntEnum
-from torch.utils.data import TensorDataset
 
 from .base import Controller
+from ..utils.encoding import StateEncoding, decode_mean
 from ..utils.constraint import clamp, boxqp, BOXQP_RESULTS
-from ..utils.encoding import StateEncoding, decode_var, decode_mean
 from ..utils.evaluation import (batch_eval_cost, batch_eval_dynamics, eval_cost,
                                 eval_dynamics)
 
 
 class iLQRState(IntEnum):
-    ACCEPTED = 0
-    REJECTED = 1
-    NOT_PD = 2
-    MAX_REG = 3
+
+    """iLQR optimization step state."""
+
+    # Undefined state.
+    UNDEFINED = 0
+
+    # Optimization step was accepted.
+    ACCEPTED = 1
+
+    # Optimization step was rejected due to insufficient descent.
+    REJECTED = 2
+
+    # Optimization step was rejected due to non-positive-definite Q_uu.
+    NOT_PD = 3
+
+    # Optimization step was rejected due to exceeding maximum regularization.
+    MAX_REG = 4
+
+    # Optimization step converged.
+    CONVERGED = 5
+
+    def should_retry(self):
+        """Whether the state is expected to improve by retrying (bool)."""
+        return self in (iLQRState.UNDEFINED, iLQRState.NOT_PD,
+                        iLQRState.REJECTED)
+
+    def is_terminal(self):
+        """Whether the state is considered terminal (bool)."""
+        return self in (iLQRState.CONVERGED, iLQRState.MAX_REG)
 
 
 class iLQRController(Controller):
@@ -73,11 +97,19 @@ class iLQRController(Controller):
         self._Z_nominal = None
         self._U_nominal = None
         self._K = None
-        self.converged = False
 
     def _step(self,
-              z0,
-              U=None,
+              Z,
+              U,
+              F_z,
+              F_u,
+              L,
+              L_z,
+              L_u,
+              L_zz,
+              L_uz,
+              L_uu,
+              J_opt,
               encoding=StateEncoding.DEFAULT,
               max_reg=1e10,
               tol=5e-6,
@@ -85,25 +117,6 @@ class iLQRController(Controller):
               alphas=10.0**torch.linspace(0, -3, 11),
               u_min=None,
               u_max=None):
-        '''
-        Single step of iLQR
-        '''
-        # Forward rollout.
-        if U is None:
-            U = self._U_nominal
-        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-            z0,
-            U,
-            self.model,
-            self.cost,
-            encoding,
-            batch_rollout,
-            self._model_opts,
-            self._cost_opts,
-            u_min=u_min,
-            u_max=u_max)
-        J_opt = L.sum()
-
         # Backward pass.
         try:
             k, K = backward(
@@ -145,15 +158,15 @@ class iLQRController(Controller):
         U_new = U_new_b[:, amin].detach()
 
         if J_new < J_opt:
-            # Check if converged due to small change.
-            if (J_opt - J_new).abs() / J_opt < tol:
-                self.converged = True
-
-            J_opt = J_new
             self._Z_nominal = Z_new
             self._U_nominal = U_new
             self._K = K
             self._decrease_reg()
+
+            # Check if converged due to small change.
+            if (J_opt - J_new).abs() / J_opt < tol:
+                return iLQRState.CONVERGED, Z_new, U_new, J_new
+
             return iLQRState.ACCEPTED, Z_new, U_new, J_new
 
         if not self._increase_reg(max_reg):
@@ -173,12 +186,33 @@ class iLQRController(Controller):
              u_min=None,
              u_max=None,
              on_iteration=None):
-        opt_state, Z, U, J_opt = self._step(z0, U, encoding, max_reg, tol,
-                                            batch_rollout, alphas, u_min, u_max)
-        if on_iteration:
-            on_iteration(i, Z.detach(), U.detach(), J_opt.detach(), opt_state,
-                         self.converged)
-        return opt_state
+        """Evaluates a single optimization step of iLQR."""
+        if U is None:
+            U = self._U_nominal
+
+        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
+            z0,
+            U,
+            self.model,
+            self.cost,
+            encoding,
+            batch_rollout,
+            self._model_opts,
+            self._cost_opts,
+            u_min=u_min,
+            u_max=u_max)
+        J_opt = L.sum()
+        alphas = alphas.to(dtype=Z.dtype, device=Z.device)
+
+        state = iLQRState.UNDEFINED
+        while state.should_retry():
+            state, Z, U, J_opt = self._step(
+                Z, U, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, J_opt, encoding,
+                max_reg, tol, batch_rollout, alphas, u_min, u_max)
+            if on_iteration:
+                on_iteration(i, state, Z.detach(), U.detach(), J_opt.detach())
+
+        return state
 
     def fit(self,
             U,
@@ -205,22 +239,23 @@ class iLQRController(Controller):
             on_iteration (callable): Function with the following signature:
                 Args:
                     iteration (int): Iteration index.
+                    state (iLQRState): Latest iteration state.
                     Z (Tensor<N+1, encoded_state_size>): Iteration's encoded
                         state path.
                     U (Tensor<N, action_size>): Iteration's action path.
                     J_opt (Tensor<0>): Iteration's total cost to-go.
-                    accepted (bool): Whether the iteration was accepted or not.
-                    converged (bool): Whether the iteration converged or not.
 
         Returns:
             Tuple of:
                 Z (Tensor<N+1, encoded_state_size>): Optimal encoded state path.
                 U (Tensor<N, action_size>): Optimal action path.
+                state (iLQRState): Final optimization state.
         """
         self._U_nominal = U.detach()
         N, action_size = U.shape
         tensor_opts = {"dtype": U.dtype, "device": U.device}
         self._reset_reg()
+        state = iLQRState.UNDEFINED
 
         # Backtracking line search candidates 0 < alpha <= 1.
         alphas = 10.0**torch.linspace(0, -3, 11).to(**tensor_opts)
@@ -228,20 +263,19 @@ class iLQRController(Controller):
         # Get initial state distribution.
         z0 = self.env.get_state().encode(encoding).detach().to(**tensor_opts)
 
-        self.converged = False
         with trange(n_iterations, desc="iLQR", disable=quiet) as pbar:
 
-            def _on_iteration(iteration, Z, U, J_opt, opt_state, converged):
+            def _on_iteration(iteration, state, Z, U, J_opt):
                 pbar.set_postfix({
+                    "state": state.name,
                     "loss": J_opt.cpu().numpy(),
                     "reg": self._mu,
-                    "state": opt_state,
                 })
                 if on_iteration:
-                    on_iteration(iteration, Z, U, J_opt, opt_state, converged)
+                    on_iteration(iteration, state, Z, U, J_opt)
 
             for i in pbar:
-                opt_state = self.step(
+                state = self.step(
                     z0,
                     None,
                     i,
@@ -254,13 +288,10 @@ class iLQRController(Controller):
                     u_max,
                     on_iteration=_on_iteration)
 
-                if self.converged:
+                if state.is_terminal():
                     break
 
-                if opt_state == iLQRState.MAX_REG:
-                    break
-
-        return self._Z_nominal, self._U_nominal
+        return self._Z_nominal, self._U_nominal, state
 
     def forward(self,
                 z,
@@ -300,8 +331,8 @@ class iLQRController(Controller):
             else:
                 return self._U_nominal[i]
         else:
-            # call step from z
-            opt_state = self.step(z, i=i, encoding=encoding)
+            self._reset_reg()
+            self.step(z, i=i, encoding=encoding, **kwargs)
             u = self._U_nominal[0]
             self._U_nominal = torch.cat(
                 [self._U_nominal[1:], self._U_nominal[-1:]], 0)
