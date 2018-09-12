@@ -23,7 +23,7 @@ INSTALL_REQUIRES = [
     "six>=1.11.0",
     "torch==0.4.1",
     "tqdm==4.25.*",
-    "enum",
+    "enum34",
 ]
 
 # Parse version information.
