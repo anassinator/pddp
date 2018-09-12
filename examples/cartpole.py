@@ -35,12 +35,20 @@ def plot_loss(J_hist):
     plt.show(block=False)
 
 
-def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
+def plot_path(Z,
+              encoding=ENCODING,
+              indices=None,
+              reality=None,
+              std_scale=1.0,
+              legend=True):
     if not PLOT:
         return
 
     mean_ = pddp.utils.encoding.decode_mean(Z, encoding)
     std_ = pddp.utils.encoding.decode_std(Z, encoding)
+
+    if reality is not None:
+        real_mean = pddp.utils.encoding.decode_mean(reality, encoding)
 
     labels = [
         "Position (m)",
@@ -58,6 +66,10 @@ def plot_path(Z, encoding=ENCODING, indices=None, std_scale=1.0, legend=True):
     for index in indices:
         mean = mean_[:, index].detach().numpy()
         std = std_[:, index].detach().numpy()
+
+        if reality is not None:
+            y = real_mean[:, index].detach().numpy()
+            plt.plot(t, y, color=colors[index], linestyle="dashed")
 
         plt.plot(t, mean, label=labels[index], color=colors[index])
 
@@ -101,6 +113,7 @@ if __name__ == "__main__":
     def on_iteration(iteration, state, Z, U, J_opt):
         J_hist.append(J_opt.detach().numpy())
         if iteration % 10 == 9 or iteration == 0:
+            real_Z = rollout(real_model, Z[0], U)
             for i in range(model.state_size):
                 plt.subplot(5, 1, i + 2)
                 plt.cla()
@@ -108,11 +121,19 @@ if __name__ == "__main__":
                     plt.title("Iteration {}".format(iteration + 1))
                 if i == model.state_size:
                     plt.xlabel("Time step")
-                plot_path(Z, indices=[i], legend=False)
+                plot_path(Z, indices=[i], reality=real_Z, legend=False)
+
+    def rollout(model, z0, U):
+        Z = torch.empty(U.shape[0] + 1, z0.shape[-1])
+        Z[0] = z0.detach()
+        for i in range(U.shape[0]):
+            Z[i + 1] = real_model(Z[i], U[i], i, encoding=ENCODING).detach()
+        return Z.detach()
 
     cost = pddp.examples.cartpole.CartpoleCost()
     env = pddp.examples.cartpole.CartpoleEnv(dt=DT, render=RENDER)
     model_class = pddp.examples.cartpole.CartpoleDynamicsModel
+    real_model = model_class(DT)
 
     model = pddp.models.bnn.bnn_dynamics_model_factory(
         env.state_size,
