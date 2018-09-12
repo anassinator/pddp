@@ -185,7 +185,7 @@ class _CartPoleEnv(gym.Env):
             self.poletrans[i].set_rotation(self.poletrans[i + 1].rotation)
 
         self.carttrans[-1].set_translation(cartx, carty)
-        self.poletrans[-1].set_rotation(-theta - np.pi)
+        self.poletrans[-1].set_rotation(theta + np.pi)
 
         return self.viewer.render(return_rgb_array=mode == "rgb_array")
 

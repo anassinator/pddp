@@ -125,12 +125,16 @@ class CartpoleDynamicsModel(DynamicsModel):
             (mc + mp) * a1 + a2 * cos_theta)) / (l * a3)
         x_dot_dot = (2 * a0 + 3 * mp * a1 * cos_theta + 4 * a2) / a3
 
+        # For symplectic integration.
+        new_x_dot = x_dot + x_dot_dot * dt
+        new_theta_dot = theta_dot + theta_dot_dot * dt
+
         mean = torch.stack(
             [
-                x + x_dot * dt,
-                x_dot + x_dot_dot * dt,
-                theta + theta_dot * dt,
-                theta_dot + theta_dot_dot * dt,
+                x + new_x_dot * dt,
+                new_x_dot,
+                theta + new_theta_dot * dt,
+                new_theta_dot,
             ],
             dim=-1)
 
