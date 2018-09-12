@@ -112,12 +112,12 @@ class iLQRController(Controller):
               L_uu,
               J_opt,
               encoding=StateEncoding.DEFAULT,
-              max_reg=1e10,
-              tol=5e-6,
               batch_rollout=True,
               alphas=10.0**torch.linspace(0, -3, 11),
               u_min=None,
               u_max=None,
+              max_reg=1e10,
+              tol=5e-6,
               quiet=False):
         # Backward pass.
         try:
@@ -184,8 +184,6 @@ class iLQRController(Controller):
              U=None,
              i=0,
              encoding=StateEncoding.DEFAULT,
-             max_reg=1e10,
-             tol=5e-6,
              batch_rollout=True,
              alphas=10.0**torch.linspace(0, -3, 11),
              u_min=None,
@@ -213,8 +211,23 @@ class iLQRController(Controller):
         state = iLQRState.UNDEFINED
         while state.should_retry():
             state, Z, U, J_opt = self._step(
-                Z, U, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu, J_opt, encoding,
-                max_reg, tol, batch_rollout, alphas, u_min, u_max)
+                Z,
+                U,
+                F_z,
+                F_u,
+                L,
+                L_z,
+                L_u,
+                L_zz,
+                L_uz,
+                L_uu,
+                J_opt,
+                encoding=encoding,
+                batch_rollout=batch_rollout,
+                alphas=alphas,
+                u_min=u_min,
+                u_max=u_max,
+                **kwargs)
             if on_iteration:
                 on_iteration(i, state, Z.detach(), U.detach(), J_opt.detach())
 
@@ -284,16 +297,17 @@ class iLQRController(Controller):
             for i in pbar:
                 state = self.step(
                     z0,
-                    None,
-                    i,
-                    encoding,
-                    max_reg,
-                    tol,
-                    batch_rollout,
-                    alphas,
-                    u_min,
-                    u_max,
-                    on_iteration=_on_iteration)
+                    U=None,
+                    i=i,
+                    encoding=encoding,
+                    batch_rollout=batch_rollout,
+                    alphas=alphas,
+                    u_min=u_min,
+                    u_max=u_max,
+                    on_iteration=_on_iteration,
+                    tol=tol,
+                    max_reg=max_reg,
+                    **kwargs)
 
                 if state.is_terminal():
                     break
@@ -339,7 +353,8 @@ class iLQRController(Controller):
                 return self._U_nominal[i]
         else:
             self._reset_reg()
-            self.step(z, i=i, encoding=encoding, **kwargs)
+            self.step(
+                z, i=i, encoding=encoding, u_min=u_min, u_max=u_max, **kwargs)
             u = self._U_nominal[0]
             self._U_nominal = torch.cat(
                 [self._U_nominal[1:], self._U_nominal[-1:]], 0)
