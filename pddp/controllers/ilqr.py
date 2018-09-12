@@ -118,7 +118,8 @@ class iLQRController(Controller):
               u_max=None,
               max_reg=1e10,
               tol=5e-6,
-              quiet=False):
+              quiet=False,
+              **kwargs):
         # Backward pass.
         try:
             k, K = backward(
