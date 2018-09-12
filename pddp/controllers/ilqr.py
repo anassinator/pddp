@@ -15,6 +15,7 @@
 """Iterative Linear Quadratic Regulator controller."""
 
 import torch
+import traceback
 import warnings
 
 with warnings.catch_warnings():
@@ -116,7 +117,8 @@ class iLQRController(Controller):
               batch_rollout=True,
               alphas=10.0**torch.linspace(0, -3, 11),
               u_min=None,
-              u_max=None):
+              u_max=None,
+              quiet=False):
         # Backward pass.
         try:
             k, K = backward(
@@ -132,8 +134,11 @@ class iLQRController(Controller):
                 reg=self._mu,
                 u_min=u_min,
                 u_max=u_max,
-                U=U)
+                U=U,
+                quiet=quiet)
         except RuntimeError:
+            if not quiet:
+                traceback.print_exc()
             if not self._increase_reg(max_reg):
                 return iLQRState.MAX_REG, Z, U, J_opt
             return iLQRState.NOT_PD, Z, U, J_opt
@@ -185,7 +190,8 @@ class iLQRController(Controller):
              alphas=10.0**torch.linspace(0, -3, 11),
              u_min=None,
              u_max=None,
-             on_iteration=None):
+             on_iteration=None,
+             **kwargs):
         """Evaluates a single optimization step of iLQR."""
         if U is None:
             U = self._U_nominal
@@ -259,6 +265,7 @@ class iLQRController(Controller):
 
         # Backtracking line search candidates 0 < alpha <= 1.
         alphas = 10.0**torch.linspace(0, -3, 11).to(**tensor_opts)
+        alphas = 1.025**(-torch.arange(10.0)**2).to(**tensor_opts)
 
         # Get initial state distribution.
         z0 = self.env.get_state().encode(encoding).detach().to(**tensor_opts)
@@ -517,7 +524,8 @@ def backward(Z,
              V_zz_reg=False,
              u_min=None,
              u_max=None,
-             U=None):
+             U=None,
+             quiet=False):
     """Evaluates the backward pass.
 
     Args:

@@ -24,9 +24,9 @@ with warnings.catch_warnings():
     from tqdm.autonotebook import trange
 
 from .base import Controller
-from .ilqr import iLQRController, iLQRState
+from .ilqr import iLQRController, iLQRState, _trajectory_cost
 
-from ..utils.encoding import StateEncoding, decode_var
+from ..utils.encoding import StateEncoding, decode_mean, decode_var
 
 
 class PDDPController(iLQRController):
@@ -63,18 +63,12 @@ class PDDPController(iLQRController):
             encoding=StateEncoding.DEFAULT,
             quiet=False,
             on_trial=None,
-            max_var=0.2,
-            max_J=0.0,
             max_trials=None,
-            n_sample_trajectories=1,
             n_initial_sample_trajectories=2,
             sampling_noise=1.0,
             train_on_start=True,
-            concatenate_datasets=True,
             max_dataset_size=1000,
-            start_from_bestU=True,
             resample_model=True,
-            apply_feedback_control=False,
             u_min=None,
             u_max=None,
             **kwargs):
@@ -119,29 +113,50 @@ class PDDPController(iLQRController):
                 state (iLQRState): Final optimization state.
         """
         U = U.detach()
-        bestU = U
-        bestJ = np.inf
-        N, action_size = U.shape
+        total_trials = 0
         state = iLQRState.UNDEFINED
 
         # Build initial dataset.
         dataset = None
-        total_trials = 0
-        if self.training and train_on_start:
-            dataset, U, J = _train(
-                self.env, self.model, self.cost, U,
-                n_initial_sample_trajectories, None, concatenate_datasets,
-                max_dataset_size, quiet, on_trial, total_trials, sampling_noise,
-                self._training_opts, self._cost_opts)
-            total_trials += n_initial_sample_trajectories
-            bestU = U
-            bestJ = J
+        if train_on_start:
+            with trange(
+                    n_initial_sample_trajectories, desc="TRIALS",
+                    disable=quiet) as pbar:
+                for i in pbar:
+                    self.env.reset()
+                    if i == 0:
+                        Ui = U
+                    else:
+                        Ui = sampling_noise * torch.randn_like(U)
+                        if u_min is not None and u_max is not None:
+                            Ui = (u_max - u_min) * Ui + u_min
+
+                    new_data, Ji = _apply_controller(
+                        self.env, self.cost, Ui, U.shape[0], encoding, False,
+                        quiet, self._cost_opts)
+                    dataset = _concat_datasets(dataset, new_data,
+                                               max_dataset_size)
+
+                    if callable(on_trial):
+                        on_trial(total_trials, new_data[0], new_data[1])
+                    total_trials += 1
+
+            # train initial model
+            self.model.train()
+            self.model.fit(*dataset, quiet=quiet, **self._training_opts)
 
         while True:
+            # reset state for iLQR
+            self.env.reset()
+
+            # set model in evaluation mode
+            self.model.eval()
+
             if resample_model and hasattr(self.model, "resample"):
                 # Use different random numbers each episode.
                 self.model.resample()
 
+            # open loop control optimization
             Z, U, state = super(PDDPController, self).fit(
                 U,
                 encoding=encoding,
@@ -153,150 +168,64 @@ class PDDPController(iLQRController):
             if not self.training:
                 break
 
-            if state.is_terminal():
-                # Check if uncertainty is satisfactory.
-                var = decode_var(Z, encoding=encoding).max()
-                if var < max_var:
-                    break
+            # apply mpc controller
+            H = 3 * U.shape[0]
+            new_data, J = _apply_controller(self.env, self.cost, self, H,
+                                            encoding, True, quiet,
+                                            self._cost_opts, **kwargs)
+            if callable(on_trial):
+                on_trial(total_trials, new_data[0], new_data[1])
+
+            # Re-train model
+            dataset = _concat_datasets(dataset, new_data, max_dataset_size)
+            self.model.train()
+            self.model.fit(*dataset, quiet=quiet, **self._training_opts)
 
             # Check if max number of trials was reached.
+            total_trials += 1
             if max_trials is not None and total_trials >= max_trials:
                 break
-
-            # Sample new data.
-            if apply_feedback_control:
-                controls = U if K is None else (U, (K, Z))
-            else:
-                controls = U
-            dataset, U, J = _train(
-                self.env, self.model, self.cost, controls,
-                n_sample_trajectories, dataset, concatenate_datasets,
-                max_dataset_size, quiet, on_trial, total_trials, sampling_noise,
-                self._training_opts, self._cost_opts, encoding)
-            total_trials += n_sample_trajectories
-
-            if J < bestJ:
-                bestU = U
-                bestJ = J
-
-            if start_from_bestU:
-                U = bestU
 
         return Z, U, state
 
 
-@torch.no_grad()
-def _train(env,
-           model,
-           cost,
-           U,
-           n_trajectories,
-           dataset=None,
-           concatenate_datasets=False,
-           max_dataset_size=None,
-           quiet=False,
-           on_trial=None,
-           n_trials=0,
-           noise=10.0,
-           training_opts={},
-           cost_opts={},
-           encoding=StateEncoding.DEFAULT):
-    model.train()
-    if type(U) is tuple or type(U) is list:
-        U, feedback_control = U
-    else:
-        feedback_control = None
+def _apply_controller(env,
+                      cost,
+                      controller,
+                      H,
+                      encoding,
+                      mpc=False,
+                      quiet=False,
+                      cost_opts={},
+                      **kwargs):
+    Z = []
+    U = []
 
-    # Sample new trajectories.
-    Us = U.repeat(n_trajectories, 1, 1)
-    Us[1:] += noise * torch.randn_like(Us[1:])
-    dataset_, sample_losses = _sample(env, Us, cost, quiet, on_trial, n_trials,
-                                      cost_opts, feedback_control, encoding)
+    if isinstance(controller, torch.Tensor):
+        # if we got open loop controls, create a function
+        # that can be called similar to the feedback controller
+        open_loop_U = controller
+        controller = lambda z, i, *args, **kwargs: open_loop_U[i]
+    with trange(H, desc="MPC", disable=quiet) as pbar:
+        for i in pbar:
+            z = env.get_state().encode(encoding)
+            Z.append(z)
+            u = controller(z, i, encoding, mpc, **kwargs)
+            U.append(u)
+            env.apply(u)
 
-    # Update dataset.
-    if concatenate_datasets:
-        dataset = _concat_datasets(dataset, dataset_, max_dataset_size)
-    else:
-        dataset = dataset_
+    # append last state (after applying last action)
+    z = env.get_state().encode(encoding)
+    Z.append(z)
+    # stack trajectory data into a tensor
+    Z = torch.stack(Z)
+    U = torch.stack(U)
 
-    # Train the model.
-    model.fit(*dataset, quiet=quiet, **training_opts)
-
-    # Pick best trajectory to continue.
-    U = Us[sample_losses.argmax()].detach()
-    J = sample_losses.max()
-    return dataset, U, J
-
-
-@torch.no_grad()
-def _sample(env,
-            Us,
-            cost,
-            quiet=False,
-            on_trial=None,
-            n_trials=0,
-            cost_opts={},
-            feedback_control=None,
-            encoding=StateEncoding.DEFAULT):
-    n_sample_trajectories, N, _ = Us.shape
-    N_ = n_sample_trajectories * N
-
-    tensor_opts = {"dtype": Us.dtype, "device": Us.device}
-    X = torch.empty(N_, env.state_size, **tensor_opts)
-    U = torch.empty(N_, env.action_size, **tensor_opts)
-    dX = torch.empty(N_, env.state_size, **tensor_opts)
-    L = torch.zeros(n_sample_trajectories, **tensor_opts)
-    if feedback_control is not None:
-        K, Z = feedback_control
-    else:
-        K, Z = None, None
-
-    with trange(Us.shape[0], desc="TRIALS", disable=quiet) as pbar:
-        for trajectory in pbar:
-            current_U = Us[trajectory]
-            base_i = N * trajectory
-            for i, u in enumerate(current_U):
-                u = u.detach()
-                x = env.get_state().mean().to(**tensor_opts)
-                if K is not None and Z is not None:
-                    z = env.get_state().encode(encoding).to(**tensor_opts)
-                    dz = z - Z[i]
-                    u = u + K[i].matmul(dz)
-                env.apply(u)
-                x_next = env.get_state().mean().to(**tensor_opts)
-
-                j = base_i + i
-                X[j] = x
-                U[j] = u
-                dX[j] = x_next - x
-
-                L[trajectory] += cost(
-                    x,
-                    u,
-                    i,
-                    encoding=StateEncoding.IGNORE_UNCERTAINTY,
-                    **cost_opts).detach()
-
-            L[trajectory] += cost(
-                x_next,
-                None,
-                i,
-                terminal=True,
-                encoding=StateEncoding.IGNORE_UNCERTAINTY,
-                **cost_opts).detach()
-
-            if on_trial:
-                on_trial(n_trials + trajectory, X[base_i:base_i + N].detach(),
-                         U[base_i:base_i + N].detach())
-
-            env.reset()
-
-    X.detach_()
-    U.detach_()
-    dX.detach_()
-    L.detach_()
-
-    return (X, U, dX), L
+    J = _trajectory_cost(cost, Z, U, encoding, cost_opts)
+    X = decode_mean(Z, encoding=encoding)
+    dX = X[1:] - X[:-1]
+    X = X[:-1]
+    return (X.detach(), U.detach(), dX.detach()), J.detach()
 
 
 @torch.no_grad()

@@ -142,13 +142,9 @@ if __name__ == "__main__":
         U,
         encoding=ENCODING,
         n_iterations=50,
-        max_var=0.4,
         on_iteration=on_iteration,
         on_trial=on_trial,
-        max_J=0,
         max_trials=20,
-        sampling_noise=1e-1,
-        start_from_bestU=True,
         u_min=UMIN,
         u_max=UMAX)
 

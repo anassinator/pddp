@@ -15,6 +15,7 @@
 """Bayesian neural network modules."""
 
 import torch
+import traceback
 import inspect
 import warnings
 import numpy as np
@@ -291,6 +292,7 @@ def bnn_dynamics_model_factory(state_size,
                     resample=False,
                     sample_input_distribution=True,
                     infer_noise_variables=True,
+                    quiet=False,
                     **kwargs):
             """Dynamics model function.
 
@@ -375,6 +377,8 @@ def bnn_dynamics_model_factory(state_size,
                     return encode(M, C=C, encoding=encoding)
                 except RuntimeError:
                     # Fallback to standard deviation.
+                    if not quiet:
+                        traceback.print_exc()
                     pass
 
             S = output.std(dim=0)
