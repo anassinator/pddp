@@ -302,7 +302,6 @@ class iLQRController(Controller):
         else:
             # call step from z
             opt_state = self.step(z, i=i, encoding=encoding)
-            print(opt_state)
             u = self._U_nominal[0]
             self._U_nominal = torch.cat(
                 [self._U_nominal[1:], self._U_nominal[-1:]], 0)
