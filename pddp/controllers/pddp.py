@@ -127,13 +127,21 @@ class PDDPController(iLQRController):
                     if i == 0:
                         Ui = U
                     else:
-                        Ui = sampling_noise * torch.randn_like(U)
+                        Ui = sampling_noise * torch.rand_like(U)
                         if u_min is not None and u_max is not None:
                             Ui = (u_max - u_min) * Ui + u_min
 
                     new_data, Ji = _apply_controller(
-                        self.env, self.cost, Ui, U.shape[0], encoding, False,
-                        quiet, self._cost_opts)
+                        self.env,
+                        self.cost,
+                        Ui,
+                        U.shape[0],
+                        encoding,
+                        False,
+                        quiet,
+                        self._cost_opts,
+                        u_min=u_min,
+                        u_max=u_max)
                     dataset = _concat_datasets(dataset, new_data,
                                                max_dataset_size)
 
@@ -169,10 +177,19 @@ class PDDPController(iLQRController):
                 break
 
             # apply mpc controller
-            H = 3 * U.shape[0]
-            new_data, J = _apply_controller(self.env, self.cost, self, H,
-                                            encoding, True, quiet,
-                                            self._cost_opts, **kwargs)
+            H = 2 * U.shape[0]
+            new_data, J = _apply_controller(
+                self.env,
+                self.cost,
+                self,
+                H,
+                encoding,
+                True,
+                quiet,
+                self._cost_opts,
+                u_min=u_min,
+                u_max=u_max,
+                **kwargs)
             if callable(on_trial):
                 on_trial(total_trials, new_data[0], new_data[1])
 
