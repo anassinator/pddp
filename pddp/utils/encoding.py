@@ -19,8 +19,10 @@ from __future__ import division
 import torch
 import numpy as np
 
+from enum import IntEnum
 
-class StateEncoding(object):
+
+class StateEncoding(IntEnum):
 
     """State encoding types."""
 
