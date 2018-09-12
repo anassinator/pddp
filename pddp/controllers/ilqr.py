@@ -32,7 +32,7 @@ from ..utils.evaluation import (batch_eval_cost, batch_eval_dynamics, eval_cost,
                                 eval_dynamics)
 
 
-class iLQR_RETURN(IntEnum):
+class iLQRState(IntEnum):
     ACCEPTED = 0
     REJECTED = 1
     NOT_PD = 2
@@ -121,9 +121,9 @@ class iLQRController(Controller):
                 u_max=u_max,
                 U=U)
         except RuntimeError:
-            if self._increase_reg(max_reg):
-                return iLQR_RETURN.MAX_REG, Z, U, J_opt
-            return iLQR_RETURN.NOT_PD, Z, U, J_opt
+            if not self._increase_reg(max_reg):
+                return iLQRState.MAX_REG, Z, U, J_opt
+            return iLQRState.NOT_PD, Z, U, J_opt
 
         # Batch-backtracking line search.
         Z_new_b, U_new_b = _control_law(
@@ -154,12 +154,12 @@ class iLQRController(Controller):
             self._U_nominal = U_new
             self._K = K
             self._decrease_reg()
-            return iLQR_RETURN.ACCEPTED, Z_new, U_new, J_new
+            return iLQRState.ACCEPTED, Z_new, U_new, J_new
 
-        if self._increase_reg(max_reg):
-            return iLQR_RETURN.MAX_REG, Z, U, J_opt
+        if not self._increase_reg(max_reg):
+            return iLQRState.MAX_REG, Z, U, J_opt
 
-        return iLQR_RETURN.REJECTED, Z, U, J_opt
+        return iLQRState.REJECTED, Z, U, J_opt
 
     def step(self,
              z0,
@@ -241,7 +241,7 @@ class iLQRController(Controller):
                     on_iteration(iteration, Z, U, J_opt, opt_state, converged)
 
             for i in pbar:
-                self.step(
+                opt_state = self.step(
                     z0,
                     None,
                     i,
@@ -255,6 +255,9 @@ class iLQRController(Controller):
                     on_iteration=_on_iteration)
 
                 if self.converged:
+                    break
+
+                if opt_state == iLQRState.MAX_REG:
                     break
 
         return self._Z_nominal, self._U_nominal
@@ -297,8 +300,13 @@ class iLQRController(Controller):
             else:
                 return self._U_nominal[i]
         else:
-            # call controller fit starting from the
-            pass
+            # call step from z
+            opt_state = self.step(z, i=i, encoding=encoding)
+            print(opt_state)
+            u = self._U_nominal[0]
+            self._U_nominal = torch.cat(
+                [self._U_nominal[1:], self._U_nominal[-1:]], 0)
+            return u
 
     def _reset_reg(self):
         """Resets the regularization parameters."""
