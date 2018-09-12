@@ -22,6 +22,7 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     from tqdm.autonotebook import trange
 
+from enum import IntEnum
 from torch.utils.data import TensorDataset
 
 from .base import Controller
@@ -29,6 +30,13 @@ from ..utils.constraint import clamp, boxqp, BOXQP_RESULTS
 from ..utils.encoding import StateEncoding, decode_var, decode_mean
 from ..utils.evaluation import (batch_eval_cost, batch_eval_dynamics, eval_cost,
                                 eval_dynamics)
+
+
+class iLQR_RETURN(IntEnum):
+    ACCEPTED = 0
+    REJECTED = 1
+    NOT_PD = 2
+    MAX_REG = 3
 
 
 class iLQRController(Controller):
@@ -67,6 +75,111 @@ class iLQRController(Controller):
         self._K = None
         self.converged = False
 
+    def _step(self,
+              z0,
+              U=None,
+              encoding=StateEncoding.DEFAULT,
+              max_reg=1e10,
+              tol=5e-6,
+              batch_rollout=True,
+              alphas=10.0**torch.linspace(0, -3, 11),
+              u_min=None,
+              u_max=None):
+        '''
+        Single step of iLQR
+        '''
+        # Forward rollout.
+        if U is None:
+            U = self._U_nominal
+        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
+            z0,
+            U,
+            self.model,
+            self.cost,
+            encoding,
+            batch_rollout,
+            self._model_opts,
+            self._cost_opts,
+            u_min=u_min,
+            u_max=u_max)
+        J_opt = L.sum()
+
+        # Backward pass.
+        try:
+            k, K = backward(
+                Z,
+                F_z,
+                F_u,
+                L,
+                L_z,
+                L_u,
+                L_zz,
+                L_uz,
+                L_uu,
+                reg=self._mu,
+                u_min=u_min,
+                u_max=u_max,
+                U=U)
+        except RuntimeError:
+            if self._increase_reg(max_reg):
+                return iLQR_RETURN.MAX_REG, Z, U, J_opt
+            return iLQR_RETURN.NOT_PD, Z, U, J_opt
+
+        # Batch-backtracking line search.
+        Z_new_b, U_new_b = _control_law(
+            self.model,
+            Z,
+            U,
+            k,
+            K,
+            alphas,
+            encoding,
+            self._model_opts,
+            u_min=u_min,
+            u_max=u_max)
+        J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b, encoding,
+                                   self._cost_opts)
+        amin = J_new_b.argmin()
+        J_new = J_new_b[amin].detach()
+        Z_new = Z_new_b[:, amin].detach()
+        U_new = U_new_b[:, amin].detach()
+
+        if J_new < J_opt:
+            # Check if converged due to small change.
+            if (J_opt - J_new).abs() / J_opt < tol:
+                self.converged = True
+
+            J_opt = J_new
+            self._Z_nominal = Z_new
+            self._U_nominal = U_new
+            self._K = K
+            self._decrease_reg()
+            return iLQR_RETURN.ACCEPTED, Z_new, U_new, J_new
+
+        if self._increase_reg(max_reg):
+            return iLQR_RETURN.MAX_REG, Z, U, J_opt
+
+        return iLQR_RETURN.REJECTED, Z, U, J_opt
+
+    def step(self,
+             z0,
+             U=None,
+             i=0,
+             encoding=StateEncoding.DEFAULT,
+             max_reg=1e10,
+             tol=5e-6,
+             batch_rollout=True,
+             alphas=10.0**torch.linspace(0, -3, 11),
+             u_min=None,
+             u_max=None,
+             on_iteration=None):
+        opt_state, Z, U, J_opt = self._step(z0, U, encoding, max_reg, tol,
+                                            batch_rollout, alphas, u_min, u_max)
+        if on_iteration:
+            on_iteration(i, Z.detach(), U.detach(), J_opt.detach(), opt_state,
+                         self.converged)
+        return opt_state
+
     def fit(self,
             U,
             encoding=StateEncoding.DEFAULT,
@@ -104,7 +217,7 @@ class iLQRController(Controller):
                 Z (Tensor<N+1, encoded_state_size>): Optimal encoded state path.
                 U (Tensor<N, action_size>): Optimal action path.
         """
-        U = U.detach()
+        self._U_nominal = U.detach()
         N, action_size = U.shape
         tensor_opts = {"dtype": U.dtype, "device": U.device}
         self._reset_reg()
@@ -115,102 +228,36 @@ class iLQRController(Controller):
         # Get initial state distribution.
         z0 = self.env.get_state().encode(encoding).detach().to(**tensor_opts)
 
-        changed = True
         self.converged = False
         with trange(n_iterations, desc="iLQR", disable=quiet) as pbar:
-            for i in pbar:
-                accepted = False
 
-                # Forward rollout only if it needs to be recomputed.
-                if changed:
-                    Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                        z0,
-                        U,
-                        self.model,
-                        self.cost,
-                        encoding,
-                        batch_rollout,
-                        self._model_opts,
-                        self._cost_opts,
-                        u_min=u_min,
-                        u_max=u_max)
-                    J_opt = L.sum()
-                    changed = False
-
-                # Backward pass.
-                try:
-                    k, K = backward(
-                        Z,
-                        F_z,
-                        F_u,
-                        L,
-                        L_z,
-                        L_u,
-                        L_zz,
-                        L_uz,
-                        L_uu,
-                        reg=self._mu,
-                        u_min=u_min,
-                        u_max=u_max,
-                        U=U)
-                except RuntimeError:
-                    if self._increase_reg(max_reg):
-                        continue
-                    break
-
-                # Batch-backtracking line search.
-                Z_new_b, U_new_b = _control_law(
-                    self.model,
-                    Z,
-                    U,
-                    k,
-                    K,
-                    alphas,
-                    encoding,
-                    self._model_opts,
-                    u_min=u_min,
-                    u_max=u_max)
-                J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b,
-                                           encoding, self._cost_opts)
-                amin = J_new_b.argmin()
-                alpha = alphas[amin]
-                J_new = J_new_b[amin].detach()
-                Z_new = Z_new_b[:, amin].detach()
-                U_new = U_new_b[:, amin].detach()
-
-                if J_new < J_opt:
-                    # Check if converged due to small change.
-                    if (J_opt - J_new).abs() / J_opt < tol:
-                        self.converged = True
-
-                    J_opt = J_new
-                    self._Z_nominal = Z = Z_new
-                    self._U_nominal = U = U_new
-                    self._K = K
-
-                    changed = True
-                    accepted = True
-
-                    self._decrease_reg()
-
+            def _on_iteration(iteration, Z, U, J_opt, opt_state, converged):
                 pbar.set_postfix({
-                    "loss": J_opt.detach_().cpu().numpy(),
+                    "loss": J_opt.cpu().numpy(),
                     "reg": self._mu,
-                    "alpha": alpha.cpu().numpy(),
-                    "accepted": accepted,
+                    "state": opt_state,
                 })
-
                 if on_iteration:
-                    on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
-                                 accepted, self.converged)
+                    on_iteration(iteration, Z, U, J_opt, opt_state, converged)
 
-                if not accepted and not self._increase_reg(max_reg):
-                    break
+            for i in pbar:
+                self.step(
+                    z0,
+                    None,
+                    i,
+                    encoding,
+                    max_reg,
+                    tol,
+                    batch_rollout,
+                    alphas,
+                    u_min,
+                    u_max,
+                    on_iteration=_on_iteration)
 
                 if self.converged:
                     break
 
-        return Z, U
+        return self._Z_nominal, self._U_nominal
 
     def forward(self,
                 z,
