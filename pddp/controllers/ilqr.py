@@ -26,7 +26,7 @@ from torch.utils.data import TensorDataset
 
 from .base import Controller
 from ..utils.constraint import clamp, boxqp, BOXQP_RESULTS
-from ..utils.encoding import StateEncoding, decode_var
+from ..utils.encoding import StateEncoding, decode_var, decode_mean
 from ..utils.evaluation import (batch_eval_cost, batch_eval_dynamics, eval_cost,
                                 eval_dynamics)
 
@@ -65,6 +65,7 @@ class iLQRController(Controller):
         self._Z_nominal = None
         self._U_nominal = None
         self._K = None
+        self.converged = False
 
     def fit(self,
             U,
@@ -115,7 +116,7 @@ class iLQRController(Controller):
         z0 = self.env.get_state().encode(encoding).detach().to(**tensor_opts)
 
         changed = True
-        converged = False
+        self.converged = False
         with trange(n_iterations, desc="iLQR", disable=quiet) as pbar:
             for i in pbar:
                 accepted = False
@@ -123,8 +124,16 @@ class iLQRController(Controller):
                 # Forward rollout only if it needs to be recomputed.
                 if changed:
                     Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                        z0, U, self.model, self.cost, encoding, batch_rollout,
-                        self._model_opts, self._cost_opts)
+                        z0,
+                        U,
+                        self.model,
+                        self.cost,
+                        encoding,
+                        batch_rollout,
+                        self._model_opts,
+                        self._cost_opts,
+                        u_min=u_min,
+                        u_max=u_max)
                     J_opt = L.sum()
                     changed = False
 
@@ -150,8 +159,17 @@ class iLQRController(Controller):
                     break
 
                 # Batch-backtracking line search.
-                Z_new_b, U_new_b = _control_law(self.model, Z, U, k, K, alphas,
-                                                encoding, self._model_opts)
+                Z_new_b, U_new_b = _control_law(
+                    self.model,
+                    Z,
+                    U,
+                    k,
+                    K,
+                    alphas,
+                    encoding,
+                    self._model_opts,
+                    u_min=u_min,
+                    u_max=u_max)
                 J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b,
                                            encoding, self._cost_opts)
                 amin = J_new_b.argmin()
@@ -163,7 +181,7 @@ class iLQRController(Controller):
                 if J_new < J_opt:
                     # Check if converged due to small change.
                     if (J_opt - J_new).abs() / J_opt < tol:
-                        converged = True
+                        self.converged = True
 
                     J_opt = J_new
                     self._Z_nominal = Z = Z_new
@@ -184,17 +202,25 @@ class iLQRController(Controller):
 
                 if on_iteration:
                     on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
-                                 accepted, converged)
+                                 accepted, self.converged)
 
                 if not accepted and not self._increase_reg(max_reg):
                     break
 
-                if converged:
+                if self.converged:
                     break
 
         return Z, U
 
-    def forward(self, z, i, encoding=StateEncoding.DEFAULT, **kwargs):
+    def forward(self,
+                z,
+                i,
+                encoding=StateEncoding.DEFAULT,
+                mpc=False,
+                ignore_uncertainty=True,
+                u_min=None,
+                u_max=None,
+                **kwargs):
         """Determines the optimal single-step control to minimize the cost.
 
         Note: You must `fit()` first.
@@ -207,12 +233,25 @@ class iLQRController(Controller):
         Returns:
             Optimal action (Tensor<action_size>).
         """
-        if self._Z_nominal is None or self._U_nominal is None or self._K is None:
-            raise RuntimeError("You must `fit()` first")
-
-        dz = z - self._Z_nominal[i]
-        du = self._K[i].matmul(dz)
-        return self._U_nominal[i] + du
+        if not mpc:
+            if self._U_nominal is None:
+                raise RuntimeError(
+                    "You need to either call fit or initialize _U_nominal")
+            if self._Z_nominal is not None:
+                if ignore_uncertainty:
+                    x = decode_mean(z, encoding)
+                    dx = x - decode_mean(self._Z_nominal[i], encoding)
+                    D = x.shape[0]
+                    du = self._K[i, :, :D].matmul(dx)
+                else:
+                    dz = z - self._Z_nominal[i]
+                    du = self._K[i].matmul(dz)
+                return self._U_nominal[i] + du
+            else:
+                return self._U_nominal[i]
+        else:
+            # call controller fit starting from the
+            pass
 
     def _reset_reg(self):
         """Resets the regularization parameters."""

@@ -25,11 +25,13 @@ with warnings.catch_warnings():
 
 from torch.utils.data import TensorDataset
 
+from .base import Controller
 from .ilqr import (iLQRController, forward, backward, Q, _linear_control_law,
                    _control_law, _trajectory_cost)
 
 from ..utils.evaluation import eval_cost, eval_dynamics
-from ..utils.encoding import StateEncoding, decode_var, infer_encoded_state_size
+from ..utils.encoding import (StateEncoding, decode_mean, decode_var,
+                              infer_encoded_state_size)
 
 
 class PDDPController(iLQRController):
@@ -64,14 +66,8 @@ class PDDPController(iLQRController):
     def fit(self,
             U,
             encoding=StateEncoding.DEFAULT,
-            n_iterations=50,
-            tol=5e-6,
-            max_reg=1e10,
-            batch_rollout=True,
             quiet=False,
-            on_iteration=None,
             on_trial=None,
-            linearize_dynamics=False,
             max_var=0.2,
             max_J=0.0,
             max_trials=None,
@@ -158,124 +154,23 @@ class PDDPController(iLQRController):
             bestU = U
             bestJ = J
 
-        # Backtracking line search candidates 0 < alpha <= 1.
-        alphas = 10.0**torch.linspace(0, -3, 11).to(**tensor_opts)
-
         while True:
             if resample_model and hasattr(self.model, "resample"):
                 # Use different random numbers each episode.
                 self.model.resample()
 
-            # Reset regularization term.
-            self._reset_reg()
-
-            # Get initial state distribution.
-            z0 = self.env.get_state().encode(encoding).detach().to(
-                **tensor_opts)
-
-            changed = True
-            converged = False
-
-            with trange(n_iterations, desc="PDDP", disable=quiet) as pbar:
-                for i in pbar:
-                    accepted = False
-
-                    # Forward rollout.
-                    if changed:
-                        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-                            z0,
-                            U,
-                            self.model,
-                            self.cost,
-                            encoding,
-                            batch_rollout,
-                            self._model_opts,
-                            self._cost_opts,
-                            u_min=u_min,
-                            u_max=u_max)
-                        J_opt = L.sum()
-                        changed = False
-
-                    # Backward pass.
-                    try:
-                        k, K = backward(
-                            Z,
-                            F_z,
-                            F_u,
-                            L,
-                            L_z,
-                            L_u,
-                            L_zz,
-                            L_uz,
-                            L_uu,
-                            reg=self._mu,
-                            u_min=u_min,
-                            u_max=u_max,
-                            U=U)
-                    except RuntimeError:
-                        if self._increase_reg(max_reg):
-                            continue
-                        break
-
-                    # Batch-backtracking line search.
-                    Z_new_b, U_new_b = _control_law(
-                        self.model,
-                        Z,
-                        U,
-                        k,
-                        K,
-                        alphas,
-                        encoding,
-                        self._model_opts,
-                        u_min=u_min,
-                        u_max=u_max)
-                    J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b,
-                                               encoding, self._cost_opts)
-                    amin = J_new_b.argmin()
-                    alpha = alphas[amin]
-                    J_new = J_new_b[amin].detach()
-                    Z_new = Z_new_b[:, amin].detach()
-                    U_new = U_new_b[:, amin].detach()
-
-                    if J_new < J_opt:
-                        # Check if converged due to small change.
-                        if (J_opt - J_new).abs() / J_opt < tol:
-                            converged = True
-                        J_opt = J_new
-                        self._Z_nominal = Z = Z_new
-                        self._U_nominal = U = U_new
-                        self._K = K
-
-                        changed = True
-                        accepted = True
-
-                        self._decrease_reg()
-
-                    info = {
-                        "loss": J_opt.detach_().cpu().numpy(),
-                        "reg": self._mu,
-                        "alpha": alpha.cpu().numpy(),
-                        "accepted": accepted,
-                    }
-                    if self.training:
-                        var = decode_var(Z, encoding=encoding).max()
-                        info["var"] = var.detach().numpy()
-                    pbar.set_postfix(info)
-
-                    if on_iteration:
-                        on_iteration(i, Z.detach(), U.detach(), J_opt.detach(),
-                                     accepted, converged)
-
-                    if not accepted and not self._increase_reg(max_reg):
-                        break
-
-                    if converged:
-                        break
+            Z, U = super(PDDPController, self).fit(
+                U,
+                encoding=encoding,
+                quiet=quiet,
+                u_min=u_min,
+                u_max=u_max,
+                **kwargs)
 
             if not self.training:
                 break
 
-            if converged:
+            if self.converged:
                 # Check if uncertainty is satisfactory.
                 var = decode_var(Z, encoding=encoding).max()
                 if var < max_var:
@@ -319,7 +214,7 @@ def _train(env,
            quiet=False,
            on_trial=None,
            n_trials=0,
-           noise=1e-2,
+           noise=10.0,
            training_opts={},
            cost_opts={},
            encoding=StateEncoding.DEFAULT):
