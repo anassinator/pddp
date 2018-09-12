@@ -18,13 +18,11 @@ import torch
 import numpy as np
 from torch.nn import Parameter
 from ...models.base import DynamicsModel
-from ...utils.constraint import constrain_model
 from ...utils.classproperty import classproperty
 from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
 from ...utils.angular import augment_state, complementary_indices, reduce_state
 
 
-@constrain_model(-2.5, 2.5)
 class PendulumDynamicsModel(DynamicsModel):
 
     """Pendulum dynamics model.

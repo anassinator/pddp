@@ -1,4 +1,5 @@
 """Experiment utilities."""
+import torch
 import warnings
 import matplotlib
 import matplotlib.pyplot as plt
@@ -19,3 +20,11 @@ def plot_pause(interval):
                 canvas.draw()
             canvas.start_event_loop(interval)
             return
+
+
+def rollout(model, z0, U, encoding, **kwargs):
+    Z = torch.empty(U.shape[0] + 1, z0.shape[-1])
+    Z[0] = z0.detach()
+    for i in range(U.shape[0]):
+        Z[i + 1] = model(Z[i], U[i], i, encoding=encoding, **kwargs).detach()
+    return Z.detach()

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import pddp
 import pddp.examples
 
-from utils import plot_pause
+from utils import plot_pause, rollout
 
 torch.set_flush_denormal(True)
 
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     def on_iteration(iteration, state, Z, U, J_opt):
         J_hist.append(J_opt.detach().numpy())
         if iteration % 10 == 9 or iteration == 0:
-            real_Z = rollout(real_model, Z[0], U)
+            real_Z = rollout(real_model, Z[0], U, ENCODING)
             for i in range(model.state_size):
                 plt.subplot(5, 1, i + 2)
                 plt.cla()
@@ -122,13 +122,6 @@ if __name__ == "__main__":
                 if i == model.state_size:
                     plt.xlabel("Time step")
                 plot_path(Z, indices=[i], reality=real_Z, legend=False)
-
-    def rollout(model, z0, U):
-        Z = torch.empty(U.shape[0] + 1, z0.shape[-1])
-        Z[0] = z0.detach()
-        for i in range(U.shape[0]):
-            Z[i + 1] = real_model(Z[i], U[i], i, encoding=ENCODING).detach()
-        return Z.detach()
 
     cost = pddp.examples.cartpole.CartpoleCost()
     env = pddp.examples.cartpole.CartpoleEnv(dt=DT, render=RENDER)
