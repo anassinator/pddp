@@ -248,7 +248,7 @@ def bnn_dynamics_model_factory(state_size,
                     else:
                         eps = torch.randn_like(dx)
 
-                    self.eps_out[i] = eps
+                    self.eps_out[i] = (eps - eps.mean(0)) / eps.std(0)
 
                 eps = self.eps_out[i]
                 if X.dim() == 3:
@@ -325,7 +325,7 @@ def bnn_dynamics_model_factory(state_size,
                         eps = torch.randn_like(X[:, 0, :])
                     else:
                         eps = torch.randn_like(X)
-                    self.eps_in[i] = eps
+                    self.eps_in[i] = (eps - eps.mean(0)) / eps.std(0)
 
                 L = decode_covar_sqrt(z, encoding)
                 should_expand = i == 0
