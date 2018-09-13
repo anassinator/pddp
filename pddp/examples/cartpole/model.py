@@ -19,11 +19,10 @@ import torch
 from torch.nn import Parameter
 
 from ...models.base import DynamicsModel
+from ...utils.particles import particles_covar
 from ...utils.classproperty import classproperty
-from ...utils.angular import augment_state, reduce_state
 from ...utils.encoding import (StateEncoding, decode_mean, decode_var,
                                decode_covar_sqrt, encode)
-from pddp.models.bnn.modules import _particles_covar
 
 
 class CartpoleDynamicsModel(DynamicsModel):
@@ -199,7 +198,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         self.output[i] = output
         if sample_input_distribution:
             M = output.mean(dim=0)
-            C = _particles_covar(output)
+            C = particles_covar(output)
             try:
                 return encode(M, C=C, encoding=encoding)
             except RuntimeError:
