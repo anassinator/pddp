@@ -143,7 +143,8 @@ if __name__ == "__main__":
         cost,
         model_opts={
             "use_predicted_std": False,
-            "infer_noise_variables": True
+            "infer_noise_variables": True,
+            "sample_input_distribution": True,
         },
         training_opts={
             "n_iter": 2000,

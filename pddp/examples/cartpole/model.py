@@ -21,7 +21,8 @@ from torch.nn import Parameter
 from ...models.base import DynamicsModel
 from ...utils.classproperty import classproperty
 from ...utils.angular import augment_state, reduce_state
-from ...utils.encoding import StateEncoding, decode_mean, decode_covar_sqrt, encode
+from ...utils.encoding import (StateEncoding, decode_mean, decode_var,
+                               decode_covar_sqrt, encode)
 from pddp.models.bnn.modules import _particles_covar
 
 
@@ -95,7 +96,7 @@ class CartpoleDynamicsModel(DynamicsModel):
                 u,
                 i,
                 encoding=StateEncoding.DEFAULT,
-                sample_input_distribution=True,
+                sample_input_distribution=False,
                 resample=False,
                 **kwargs):
         """Dynamics model function.
@@ -117,11 +118,11 @@ class CartpoleDynamicsModel(DynamicsModel):
         g = self.g
 
         mean = decode_mean(z, encoding)
-        L = decode_covar_sqrt(z, encoding)
 
-        X = mean.expand(100, *mean.shape)
-        U = u.expand(100, *u.shape)
         if sample_input_distribution:
+            L = decode_covar_sqrt(z, encoding)
+            X = mean.expand(100, *mean.shape)
+            U = u.expand(100, *u.shape)
             if resample or i not in self.eps:
                 if X.dim() == 3:
                     # This is required to make batched jacobians correct as
@@ -138,6 +139,10 @@ class CartpoleDynamicsModel(DynamicsModel):
                 X = X + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
             else:
                 X = X + eps.mm(L)
+        else:
+            X = mean
+            U = u
+            var = decode_var(z, encoding)
 
         x = X[..., 0]
         x_dot = X[..., 1]
@@ -169,10 +174,13 @@ class CartpoleDynamicsModel(DynamicsModel):
                 new_theta_dot,
             ],
             dim=-1)
-        M = output.mean(dim=0)
-        C = _particles_covar(output) * 0.9
-        try:
-            return encode(M, C=C, encoding=encoding)
-        except RuntimeError:
-            import pdb
-            pdb.set_trace()
+        if sample_input_distribution:
+            M = output.mean(dim=0)
+            C = _particles_covar(output)
+            try:
+                return encode(M, C=C, encoding=encoding)
+            except RuntimeError:
+                import pdb
+                pdb.set_trace()
+        else:
+            return encode(output, V=var, encoding=encoding)
