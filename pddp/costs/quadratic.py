@@ -34,12 +34,7 @@ class QRCost(Cost):
         E[L(x)] = tr(Q \Sigma) + (\mu - x_goal)^T Q (\mu - x_goal)
     """
 
-    def __init__(self,
-                 Q,
-                 R,
-                 Q_term=None,
-                 x_goal=torch.tensor(0.0),
-                 u_goal=torch.tensor(0.0)):
+    def __init__(self, Q, R, Q_term=None, x_goal=0.0, u_goal=0.0):
         """Constructs a QRCost.
 
         Args:
@@ -57,8 +52,10 @@ class QRCost(Cost):
         self.R = torch.nn.Parameter(R, requires_grad=False)
         self.Q_term = torch.nn.Parameter(Q_term, requires_grad=False)
 
-        self.x_goal = torch.nn.Parameter(x_goal, requires_grad=False)
-        self.u_goal = torch.nn.Parameter(u_goal, requires_grad=False)
+        self.x_goal = torch.nn.Parameter(
+            torch.tensor(x_goal), requires_grad=False)
+        self.u_goal = torch.nn.Parameter(
+            torch.tensor(u_goal), requires_grad=False)
 
     def forward(self,
                 z,
@@ -107,12 +104,7 @@ class SaturatingQRCost(Cost):
     r"""Saturating quadratic cost function.
     """
 
-    def __init__(self,
-                 Q,
-                 R,
-                 Q_term=None,
-                 x_goal=torch.tensor(0.0),
-                 u_goal=torch.tensor(0.0)):
+    def __init__(self, Q, R, Q_term=None, x_goal=0.0, u_goal=0.0):
         """Constructs a QRCost.
 
         Args:
@@ -130,8 +122,10 @@ class SaturatingQRCost(Cost):
         self.R = torch.nn.Parameter(R, requires_grad=False)
         self.Q_term = torch.nn.Parameter(Q_term, requires_grad=False)
 
-        self.x_goal = torch.nn.Parameter(x_goal, requires_grad=False)
-        self.u_goal = torch.nn.Parameter(u_goal, requires_grad=False)
+        self.x_goal = torch.nn.Parameter(
+            torch.tensor(x_goal), requires_grad=False)
+        self.u_goal = torch.nn.Parameter(
+            torch.tensor(u_goal), requires_grad=False)
 
     def forward(self,
                 z,
