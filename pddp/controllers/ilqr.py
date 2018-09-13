@@ -586,14 +586,35 @@ def backward(Z,
 
         for i in range(N - 1, -1, -1):
             Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i],
-                                           L_zz[i], L_uz[i], L_uu[i], V_z,
-                                           V_zz + reg)
+                                           L_zz[i], L_uz[i], L_uu[i], V_z, V_zz)
+            _, Q_u_reg, _, Q_uz_reg, Q_uu_reg = Q(F_z[i], F_u[i], L_z[i],
+                                                  L_u[i], L_zz[i], L_uz[i],
+                                                  L_uu[i], V_z, V_zz + reg)
 
-            Q_uu_chol = Q_uu.potrf()
-            Q_uz_u = torch.cat([Q_u.unsqueeze(1), Q_uz], dim=-1)
-            kK = -Q_uz_u.potrs(Q_uu_chol)
-            k[i] = kK[:, 0]
-            K[i] = kK[:, 1:]
+            if u_min is None or u_max is None:
+                Q_uu_chol = Q_uu_reg.potrf()
+                Q_uz_u = torch.cat([Q_u_reg.unsqueeze(1), Q_uz_reg], dim=-1)
+                kK = -Q_uz_u.potrs(Q_uu_chol)
+                k[i] = kK[:, 0]
+                K[i] = kK[:, 1:]
+            else:
+                # solve QP
+                lower = u_min - U[i]
+                upper = u_max - U[i]
+                k_ip1 = k[i + 1] if i < N - 1 else k[-1]
+                k[i], result, Q_uu_chol_free, free = boxqp(
+                    k_ip1, Q_uu_reg, Q_u_reg, lower, upper, quiet=True)
+
+                if result < 1:
+                    raise RuntimeError("BoxQP failed: {}".format(
+                        BOXQP_RESULTS[result]))
+
+                # compute feedback matrix
+                if any(free):
+                    idxs = free.nonzero().flatten()
+                    Q_uz_free = Q_uz_reg[idxs, :]
+                    K_free = -torch.potrs(Q_uz_free, Q_uu_chol_free)
+                    K[i, idxs, :] = K_free
 
             V_z = Q_z + K[i].t().matmul(Q_u)
             V_z += K[i].t().mm(Q_uu).matmul(k[i])
@@ -607,7 +628,7 @@ def backward(Z,
             Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i],
                                            L_zz[i], L_uz[i], L_uu[i], V_z, V_zz)
 
-            e_uu, E_uu = Q_uu.eig(True)
+            e_uu, E_uu = Q_uu.clone().eig(True)
             e_uu = e_uu[:, 0]
             e_uu[e_uu < 0] = 1e-12
             e_uu += reg
@@ -621,13 +642,13 @@ def backward(Z,
                 k[i] = kK[:, 0]
                 K[i] = kK[:, 1:]
             else:
-                Q_uu = (E_uu * e_uu).mm(E_uu.t())
+                Q_uu_reg = (E_uu * e_uu).mm(E_uu.t())
                 # solve QP
                 lower = u_min - U[i]
                 upper = u_max - U[i]
                 k_ip1 = k[i + 1] if i < N - 1 else k[-1]
                 k[i], result, Q_uu_chol_free, free = boxqp(
-                    k_ip1, Q_uu, Q_u, lower, upper, quiet=True)
+                    k_ip1, Q_uu_reg, Q_u, lower, upper, quiet=True)
 
                 if result < 1:
                     raise RuntimeError("BoxQP failed: {}".format(
@@ -640,8 +661,14 @@ def backward(Z,
                     K_free = -torch.potrs(Q_uz_free, Q_uu_chol_free)
                     K[i, idxs, :] = K_free
 
-            V_z = Q_z + Q_uz.t().matmul(k[i])
-            V_zz = Q_zz + Q_uz.t().mm(K[i])
+            V_z = Q_z + K[i].t().matmul(Q_u)
+            # corrections since K uses Q_uu_reg
+            V_z += K[i].t().mm(Q_uu).matmul(k[i])
+            V_z += Q_uz.t().matmul(k[i])
+
+            V_zz = Q_zz + K[i].t().mm(Q_uu).mm(K[i])
+            # corrections since K uses Q_uu_reg
+            V_zz += K[i].t().mm(Q_uz) + Q_uz.t().mm(K[i])
             V_zz = 0.5 * (V_zz + V_zz.t())  # To maintain symmetry.
 
     return k, K
