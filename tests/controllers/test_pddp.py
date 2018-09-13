@@ -62,5 +62,6 @@ def test_fit(env_class, model_class, cost_class, encoding, N):
     assert state.is_terminal()
 
     controller.train()
-    Z, U, state = controller.fit(U, encoding=encoding, max_var=np.inf)
+    Z, U, state = controller.fit(
+        U, max_trials=3, encoding=encoding, max_var=np.inf)
     assert state.is_terminal()
