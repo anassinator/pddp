@@ -34,6 +34,7 @@ from ..base import DynamicsModel
 from .losses import gaussian_log_likelihood
 
 from ...utils.constraint import constrain
+from ...utils.particles import particles_covar
 from ...utils.classproperty import classproperty
 from ...utils.encoding import (StateEncoding, decode_mean, decode_std,
                                decode_covar_sqrt, encode)
@@ -248,7 +249,7 @@ def bnn_dynamics_model_factory(state_size,
                     else:
                         eps = torch.randn_like(dx)
 
-                    self.eps_out[i] = eps
+                    self.eps_out[i] = (eps - eps.mean(0)) / eps.std(0)
 
                 eps = self.eps_out[i]
                 if X.dim() == 3:
@@ -325,7 +326,7 @@ def bnn_dynamics_model_factory(state_size,
                         eps = torch.randn_like(X[:, 0, :])
                     else:
                         eps = torch.randn_like(X)
-                    self.eps_in[i] = eps
+                    self.eps_in[i] = (eps - eps.mean(0)) / eps.std(0)
 
                 L = decode_covar_sqrt(z, encoding)
                 should_expand = i == 0
@@ -373,7 +374,7 @@ def bnn_dynamics_model_factory(state_size,
                             StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
                 try:
                     # Compute full covariance matrix.
-                    C = _particles_covar(output)
+                    C = particles_covar(output)
                     return encode(M, C=C, encoding=encoding)
                 except RuntimeError:
                     # Fallback to standard deviation.
@@ -388,22 +389,6 @@ def bnn_dynamics_model_factory(state_size,
         return ParticlesBNNDynamicsModel
 
     return BNNDynamicsModel
-
-
-def _particles_covar(x):
-    """Computes the covariance of a set of particles.
-
-    Args:
-        x (Tensor<..., n_particles, state_size>): Particle set.
-
-    Returns:
-        Covariance matrix (Tensor<..., state_size, state_size>).
-    """
-    deltas = x - x.mean(dim=0)
-    if deltas.dim() == 3:
-        deltas = deltas.permute(1, 0, 2)
-        return deltas.transpose(1, 2).bmm(deltas) / (x.shape[0] - 1)
-    return deltas.t().mm(deltas) / (x.shape[0] - 1)
 
 
 def _cycle(iterable, total):

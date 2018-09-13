@@ -15,9 +15,16 @@
 """Common utilities."""
 
 from . import (angular, autodiff, classproperty, constraint, encoding,
-               evaluation, gaussian_variable, trajectory)
+               evaluation, gaussian_variable, particles, trajectory)
 
 __all__ = [
-    "angular", "autodiff", "classproperty", "constraint", "encoding",
-    "evaluation", "gaussian_variable", "trajectory"
+    "angular",
+    "autodiff",
+    "classproperty",
+    "constraint",
+    "encoding",
+    "evaluation",
+    "gaussian_variable",
+    "particles",
+    "trajectory",
 ]

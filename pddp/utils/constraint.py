@@ -234,7 +234,7 @@ def boxqp(x0,
             break
 
         # get search direction
-        g_clamped = Q.matmul(x * clamped.float()) + c
+        g_clamped = Q.matmul(x * clamped.to(x.dtype)) + c
         search = torch.zeros_like(x)
         search[free] = -torch.potrs(g_clamped[free], Ufree).flatten() - x[free]
 

@@ -112,11 +112,6 @@ def encode(M, C=None, V=None, S=None, encoding=StateEncoding.DEFAULT):
         Encoded state vector(s) (Tensor<..., state_size>).
     """
     state_size = M.shape[-1]
-    tensor_opts = {
-        "device": M.device,
-        "dtype": M.dtype,
-        "requires_grad": M.requires_grad
-    }
 
     if encoding == StateEncoding.FULL_COVARIANCE_MATRIX:
         C = _C_from(C, V, S)
@@ -210,8 +205,10 @@ def decode_covar(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             pass
         elif Z.dim() == 2:
             C = C.expand(Z.shape[0], state_size, state_size)
+        elif Z.dim() == 3:
+            C = C.expand(Z.shape[0], Z.shape[1], state_size, state_size)
         else:
-            raise NotImplementedError("Expected a 1D or 2D tensor")
+            raise NotImplementedError("Expected a 1D, 2D or 3D tensor")
 
         if Z.requires_grad:
             C.requires_grad_()
@@ -250,8 +247,10 @@ def decode_var(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             pass
         elif Z.dim() == 2:
             V = V.expand(Z.shape[0], state_size)
+        elif Z.dim() == 3:
+            V = V.expand(Z.shape[0], Z.shape[1], state_size)
         else:
-            raise NotImplementedError("Expected a 1D or 2D tensor")
+            raise NotImplementedError("Expected a 1D, 2D or 3D tensor")
 
         if Z.requires_grad:
             V.requires_grad_()

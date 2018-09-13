@@ -14,6 +14,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>
 """Sample dynamics models."""
 
+from .problems import SampleProblems
 from . import cartpole, double_cartpole, pendulum, rendezvous
 
-__all__ = ["cartpole", "double_cartpole", "pendulum", "rendezvous"]
+__all__ = [
+    "SampleProblems",
+    "cartpole",
+    "double_cartpole",
+    "pendulum",
+    "rendezvous",
+]
