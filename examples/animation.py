@@ -52,7 +52,7 @@ def update(iteration):
     Z = Zs[iteration]
 
     t = np.arange(N + 1) * DT
-    X = Z.detach().numpy()
+    X = pddp.utils.encoding.decode_mean(Z, ENCODING).detach().numpy()
 
     x = X[:, 0]
     x_dot = X[:, 1]

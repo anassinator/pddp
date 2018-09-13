@@ -39,7 +39,8 @@ def update(iteration):
     env.apply(u)
 
     t = np.arange(N + 1) * DT
-    X = controller._Z_nominal.detach().numpy()
+    Z = controller._Z_nominal.detach()
+    X = pddp.utils.encoding.decode_mean(Z, ENCODING).numpy()
 
     x = X[:, 0]
     x_dot = X[:, 1]
