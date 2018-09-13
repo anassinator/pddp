@@ -55,6 +55,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         self.mu = Parameter(torch.tensor(mu), requires_grad=True)
         self.g = Parameter(torch.tensor(g), requires_grad=True)
         self.eps = {}
+        self.output = {}
 
     @classproperty
     def action_size(cls):
@@ -90,14 +91,17 @@ class CartpoleDynamicsModel(DynamicsModel):
 
     def resample(self):
         self.eps = {}
+        self.output = {}
 
     def forward(self,
                 z,
                 u,
                 i,
                 encoding=StateEncoding.DEFAULT,
-                sample_input_distribution=False,
+                identical_inputs=False,
                 resample=False,
+                sample_input_distribution=True,
+                infer_noise_variables=True,
                 **kwargs):
         """Dynamics model function.
 
@@ -132,10 +136,28 @@ class CartpoleDynamicsModel(DynamicsModel):
                 else:
                     eps = torch.randn_like(X)
                 self.eps[i] = eps
-
-            eps = self.eps[i]
+            should_expand = i == 0
+            if infer_noise_variables and i > 0:
+                deltas = self.output[i - 1] - mean
+                if not identical_inputs and X.dim() == 3:
+                    deltas = deltas.permute(1, 0, 2)
+                    eps = deltas.transpose(-2, -1).gesv(L.transpose(-2, -1))[0]
+                    eps = eps.permute(2, 0, 1).detach()
+                else:
+                    if X.dim() == 3:
+                        deltas = deltas[:, 0]
+                        L_ = L[0]
+                    else:
+                        L_ = L
+                    eps = torch.trtrs(
+                        deltas.t(), L_, transpose=True)[0].t().detach()
+                    should_expand = True
+            else:
+                eps = self.eps[i]
+                should_expand = True
             if X.dim() == 3:
-                eps = eps.unsqueeze(1).repeat(1, X.shape[1], 1)
+                if should_expand:
+                    eps = eps.unsqueeze(1).repeat(1, X.shape[1], 1)
                 X = X + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
             else:
                 X = X + eps.mm(L)
@@ -174,6 +196,7 @@ class CartpoleDynamicsModel(DynamicsModel):
                 new_theta_dot,
             ],
             dim=-1)
+        self.output[i] = output
         if sample_input_distribution:
             M = output.mean(dim=0)
             C = _particles_covar(output)
