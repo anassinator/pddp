@@ -546,18 +546,19 @@ def _cholesky(C, jitter=1e-12, max_jitter=10):
     Returns:
         Cholesky decomposition (Tensor<..., state_size, state_size>).
     """
+    if C.dim() == 2:
+        pass
+    elif C.dim() == 3:
+        # TODO: Use batch Cholesky.
+        L = torch.stack([_cholesky(c, jitter, max_jitter) for c in C])
+        return L
+    else:
+        raise NotImplementedError("Expected a 1D or 2D tensor")
     I = torch.eye(C.shape[-1], dtype=C.dtype, device=C.device)
     while True:
         try:
             C_ = C + jitter * I
-            if C.dim() == 2:
-                return C_.potrf()
-            elif C.dim() == 3:
-                # TODO: Use batch Cholesky.
-                L = torch.stack([c.potrf() for c in C_])
-                return L
-            else:
-                raise NotImplementedError("Expected a 1D or 2D tensor")
+            return C_.potrf()
         except RuntimeError:
             jitter *= 10
             if jitter > max_jitter:
