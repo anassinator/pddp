@@ -139,7 +139,7 @@ if __name__ == "__main__":
     U = (UMAX - UMIN) * torch.rand(N, model.action_size) + UMIN
     controller = pddp.controllers.PDDPController(
         env,
-        model,
+        real_model,
         cost,
         model_opts={
             "use_predicted_std": False,

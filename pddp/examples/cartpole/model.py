@@ -21,7 +21,8 @@ from torch.nn import Parameter
 from ...models.base import DynamicsModel
 from ...utils.classproperty import classproperty
 from ...utils.angular import augment_state, reduce_state
-from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
+from ...utils.encoding import StateEncoding, decode_mean, decode_covar_sqrt, encode
+from pddp.models.bnn.modules import _particles_covar
 
 
 class CartpoleDynamicsModel(DynamicsModel):
@@ -52,6 +53,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         self.l = Parameter(torch.tensor(l), requires_grad=True)
         self.mu = Parameter(torch.tensor(mu), requires_grad=True)
         self.g = Parameter(torch.tensor(g), requires_grad=True)
+        self.eps = {}
 
     @classproperty
     def action_size(cls):
@@ -85,7 +87,17 @@ class CartpoleDynamicsModel(DynamicsModel):
         # No need: this is an exact dynamics model.
         pass
 
-    def forward(self, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
+    def resample(self):
+        self.eps = {}
+
+    def forward(self,
+                z,
+                u,
+                i,
+                encoding=StateEncoding.DEFAULT,
+                sample_input_distribution=True,
+                resample=False,
+                **kwargs):
         """Dynamics model function.
 
         Args:
@@ -105,13 +117,33 @@ class CartpoleDynamicsModel(DynamicsModel):
         g = self.g
 
         mean = decode_mean(z, encoding)
-        var = decode_var(z, encoding)
+        L = decode_covar_sqrt(z, encoding)
 
-        x = mean[..., 0]
-        x_dot = mean[..., 1]
-        theta = mean[..., 2]
-        theta_dot = mean[..., 3]
-        F = u[..., 0]
+        X = mean.expand(100, *mean.shape)
+        U = u.expand(100, *u.shape)
+        if sample_input_distribution:
+            if resample or i not in self.eps:
+                if X.dim() == 3:
+                    # This is required to make batched jacobians correct as
+                    # the batches are in the second dimension and should
+                    # share the same samples.
+                    eps = torch.randn_like(X[:, 0, :])
+                else:
+                    eps = torch.randn_like(X)
+                self.eps[i] = eps
+
+            eps = self.eps[i]
+            if X.dim() == 3:
+                eps = eps.unsqueeze(1).repeat(1, X.shape[1], 1)
+                X = X + (eps[:, :, :, None] * L[None, :, :, :]).sum(-2)
+            else:
+                X = X + eps.mm(L)
+
+        x = X[..., 0]
+        x_dot = X[..., 1]
+        theta = X[..., 2]
+        theta_dot = X[..., 3]
+        F = U[..., 0]
 
         sin_theta = theta.sin()
         cos_theta = theta.cos()
@@ -129,7 +161,7 @@ class CartpoleDynamicsModel(DynamicsModel):
         new_x_dot = x_dot + x_dot_dot * dt
         new_theta_dot = theta_dot + theta_dot_dot * dt
 
-        mean = torch.stack(
+        output = torch.stack(
             [
                 x + new_x_dot * dt,
                 new_x_dot,
@@ -137,5 +169,10 @@ class CartpoleDynamicsModel(DynamicsModel):
                 new_theta_dot,
             ],
             dim=-1)
-
-        return encode(mean, V=var, encoding=encoding)
+        M = output.mean(dim=0)
+        C = _particles_covar(output) * 0.9
+        try:
+            return encode(M, C=C, encoding=encoding)
+        except RuntimeError:
+            import pdb
+            pdb.set_trace()
