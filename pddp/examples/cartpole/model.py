@@ -135,7 +135,7 @@ class CartpoleDynamicsModel(DynamicsModel):
                     eps = torch.randn_like(X[:, 0, :])
                 else:
                     eps = torch.randn_like(X)
-                self.eps[i] = eps
+                self.eps[i] = (eps - eps.mean(0)) / eps.std(0)
             should_expand = i == 0
             if infer_noise_variables and i > 0:
                 deltas = self.output[i - 1] - mean
