@@ -100,7 +100,7 @@ class CartpoleDynamicsModel(DynamicsModel):
                 encoding=StateEncoding.DEFAULT,
                 identical_inputs=False,
                 resample=False,
-                sample_input_distribution=True,
+                sample_input_distribution=False,
                 infer_noise_variables=True,
                 **kwargs):
         """Dynamics model function.
