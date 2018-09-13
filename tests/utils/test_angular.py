@@ -5,8 +5,8 @@ import pytest
 import numpy as np
 
 from pddp.utils.angular import *
-from pddp.utils.encoding import StateEncoding
 from pddp.utils.gaussian_variable import GaussianVariable
+from pddp.utils.encoding import StateEncoding, infer_encoded_state_size
 
 # Organized as angular_indices, non_angular_indices pairs.
 INDICES = [
@@ -18,6 +18,13 @@ INDICES = [
     (torch.tensor([0, 1, 2, 3, 4]).long(), torch.tensor([]).long()),
 ]
 AUGMENTED_SIZES = [5, 6, 7, 8, 9, 10]
+STATE_ENCODINGS = [
+    StateEncoding.FULL_COVARIANCE_MATRIX,
+    StateEncoding.UPPER_TRIANGULAR_CHOLESKY,
+    StateEncoding.VARIANCE_ONLY,
+    StateEncoding.STANDARD_DEVIATION_ONLY,
+    StateEncoding.IGNORE_UNCERTAINTY,
+]
 
 
 @pytest.mark.parametrize("indices, augmented_size", zip(INDICES,
@@ -66,3 +73,27 @@ def test_augment_reduce_state(indices, augmented_size):
     torch.autograd.gradcheck(
         augment_encoded_state,
         (Z.double(), indices[0], indices[1], StateEncoding.VARIANCE_ONLY))
+
+
+@pytest.mark.parametrize("indices, augmented_size", zip(INDICES,
+                                                        AUGMENTED_SIZES))
+@pytest.mark.parametrize("encoding", STATE_ENCODINGS)
+def test_augment_encoded_state(encoding, indices, augmented_size):
+    state_size = 5
+    N = 3
+    X = [GaussianVariable.random(state_size) for i in range(N)]
+    Z = torch.stack([x.encode(encoding).double() for x in X])
+
+    angular_indices, non_angular_indices = indices
+    Z_ = augment_encoded_state(Z, angular_indices, non_angular_indices,
+                               encoding)
+    assert Z_.shape[0] == N
+    assert Z_.shape[1] == infer_encoded_state_size(augmented_size, encoding)
+
+    torch.autograd.gradcheck(
+        augment_encoded_state,
+        (Z, angular_indices, non_angular_indices, encoding))
+
+    torch.autograd.gradgradcheck(
+        augment_encoded_state,
+        (Z, angular_indices, non_angular_indices, encoding))

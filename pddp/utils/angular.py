@@ -101,15 +101,15 @@ def _augment_var(m, v, angular_indices, non_angular_indices):
             V (Tensor<..., augmented_state_size>): Augmented variance vector(s).
     """
     # Based on https://github.com/mcgillmrl/kusanagi
-    if len(angular_indices) == 0:
-        return m, v
-
     tensor_opts = {"dtype": m.dtype, "device": m.device}
 
     D = m.shape[-1]
     n_angles = len(angular_indices)
     Da = 2 * n_angles
     Dna = len(non_angular_indices)
+
+    if n_angles == 0:
+        return m, v
 
     if m.dim() == 1:
         Ma = torch.empty(Da, **tensor_opts)
@@ -181,6 +181,9 @@ def _augment_covar(m, c, angular_indices, non_angular_indices):
     Da = len(angular_indices) * 2
     Dna = len(non_angular_indices)
 
+    if Da == 0:
+        return m, c
+
     if m.dim() == 1:
         Ma = torch.zeros(Da, **tensor_opts)
         Va = torch.zeros(Da, Da, **tensor_opts)
@@ -231,14 +234,16 @@ def _augment_covar(m, c, angular_indices, non_angular_indices):
     M = torch.cat([Mna, Ma], dim=-1)
 
     # Construct the corresponding covariance matrices.
-    Vna = c[..., non_angular_indices, :][..., :, non_angular_indices]
-    C[..., :Dna, :Dna] = Vna
+    if Dna > 0:
+        Vna = c[..., non_angular_indices, :][..., :, non_angular_indices]
+        C[..., :Dna, :Dna] = Vna
     C[..., Dna:, Dna:] = Va
 
-    # Fill in the cross covariances.
-    C[..., :Dna, Dna:] = (
-        c.unsqueeze(-1) * Ca.unsqueeze(-2)).sum(-3)[..., non_angular_indices, :]
-    C[..., Dna:, :Dna] = C[..., :Dna, Dna:].transpose(-1, -2)
+    if Dna > 0:
+        # Fill in the cross covariances.
+        C[..., :Dna, Dna:] = (c.unsqueeze(-1) * Ca.unsqueeze(-2)
+                             ).sum(-3)[..., non_angular_indices, :]
+        C[..., Dna:, :Dna] = C[..., :Dna, Dna:].transpose(-1, -2)
 
     return M, C
 
