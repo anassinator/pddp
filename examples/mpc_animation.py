@@ -1,6 +1,5 @@
 import pddp
 import torch
-import seaborn
 import pddp.examples
 
 import sys
@@ -13,7 +12,7 @@ fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
 DT = 0.1  # Time step (s).
 RENDER = False  # Whether to render the environment or not.
 N = 25  # Horizon length.
-ITERATIONS = 75
+ITERATIONS = 50
 U_MAX = torch.tensor([10.0])
 U_MIN = -U_MAX
 
@@ -32,6 +31,9 @@ controller.fit(
 
 
 def update(iteration):
+    if iteration == 0:
+        env.reset()
+
     z0 = env.get_state().encode(ENCODING)
     u = controller(z0, iteration, ENCODING, mpc=True, u_min=U_MIN, u_max=U_MAX)
     env.apply(u)
@@ -57,11 +59,11 @@ def update(iteration):
     return ax
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     anim = FuncAnimation(
-        fig, update, frames=np.arange(0, ITERATIONS), interval=10)
-    if len(sys.argv) > 1 and sys.argv[1] == 'save':
-        anim.save('line.gif', dpi=fig.get_dpi(), writer='imagemagick')
+        fig, update, frames=np.arange(0, ITERATIONS), interval=100)
+    if len(sys.argv) > 1 and sys.argv[1] == "save":
+        anim.save("mpc.gif", dpi=fig.get_dpi(), writer="imagemagick")
     else:
         # Just loop the animation forever.
         plt.show()

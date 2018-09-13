@@ -1,6 +1,5 @@
 import pddp
 import torch
-import seaborn
 import pddp.examples
 
 import sys
@@ -74,11 +73,11 @@ def update(iteration):
     return ax
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     anim = FuncAnimation(
         fig, update, frames=np.arange(0, Zs.shape[0]), interval=1000)
-    if len(sys.argv) > 1 and sys.argv[1] == 'save':
-        anim.save('line.gif', dpi=fig.get_dpi(), writer='imagemagick')
+    if len(sys.argv) > 1 and sys.argv[1] == "save":
+        anim.save("ilqr.gif", dpi=fig.get_dpi(), writer="imagemagick")
     else:
         # Just loop the animation forever.
         plt.show()
