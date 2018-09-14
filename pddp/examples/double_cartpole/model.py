@@ -97,19 +97,17 @@ class DoubleCartpoleDynamicsModel(DynamicsModel):
         # No need: this is an exact dynamics model.
         pass
 
-    def forward(self, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
+    def dynamics(self, z, u, i):
         """Dynamics model function.
 
         Args:
             z (Tensor<..., encoded_state_size>): Encoded state distribution.
             u (Tensor<..., action_size>): Action vector(s).
-            i (int): Time index.
-            encoding (int): StateEncoding enum.
+            i (Tensor<...>): Time index.
 
         Returns:
-            Next encoded state distribution (Tensor<..., encoded_state_size>).
+            derivatives of current state wrt to time (Tensor<..., encoded_state_size>).
         """
-        dt = self.dt
         mc = self.mc if z.dim() == 1 else self.mc.repeat(z.shape[0])
         mp1 = self.mp1 if z.dim() == 1 else self.mp1.repeat(z.shape[0])
         mp2 = self.mp2 if z.dim() == 1 else self.mp2.repeat(z.shape[0])
@@ -118,15 +116,11 @@ class DoubleCartpoleDynamicsModel(DynamicsModel):
         mu = self.mu if z.dim() == 1 else self.mu.repeat(z.shape[0])
         g = self.g if z.dim() == 1 else self.g.repeat(z.shape[0])
 
-        mean = decode_mean(z, encoding)
-        var = decode_var(z, encoding)
-
-        x = mean[..., 0]
-        x_dot = mean[..., 1]
-        theta1 = mean[..., 2]
-        theta1_dot = mean[..., 3]
-        theta2 = mean[..., 4]
-        theta2_dot = mean[..., 5]
+        x_dot = z[..., 1]
+        theta1 = z[..., 2]
+        theta1_dot = z[..., 3]
+        theta2 = z[..., 4]
+        theta2_dot = z[..., 5]
         F = u[..., 0]
 
         sin_theta1 = theta1.sin()
@@ -177,19 +171,17 @@ class DoubleCartpoleDynamicsModel(DynamicsModel):
         sol = torch.gesv(b, A)[0].transpose(-2, -1)
 
         # For symplectic integration.
-        new_x_dot = x_dot + sol[..., 0].view(x_dot.shape) * dt
-        new_theta1_dot = theta1_dot + sol[..., 1].view(theta1_dot.shape) * dt
-        new_theta2_dot = theta2_dot + sol[..., 2].view(theta2_dot.shape) * dt
+        x_dot_dot = sol[..., 0].view(x_dot.shape)
+        theta1_dot_dot = sol[..., 1].view(theta1_dot.shape)
+        theta2_dot_dot = sol[..., 2].view(theta2_dot.shape)
 
-        mean = torch.stack(
+        return torch.stack(
             [
-                x + new_x_dot * dt,
-                new_x_dot,
-                theta1 + new_theta1_dot * dt,
-                new_theta1_dot,
-                theta2 + new_theta2_dot * dt,
-                new_theta2_dot,
+                x_dot,
+                x_dot_dot,
+                theta1_dot,
+                theta1_dot_dot,
+                theta2_dot,
+                theta2_dot_dot,
             ],
             dim=-1)
-
-        return encode(mean, V=var, encoding=encoding)

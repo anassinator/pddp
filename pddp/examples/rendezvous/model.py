@@ -76,38 +76,30 @@ class RendezvousDynamicsModel(DynamicsModel):
         # No need: this is an exact dynamics model.
         pass
 
-    def forward(self, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
+    def dynamics(self, z, u, i):
         """Dynamics model function.
 
         Args:
             z (Tensor<..., encoded_state_size>): Encoded state distribution.
             u (Tensor<..., action_size>): Action vector(s).
-            i (int): Time index.
-            encoding (int): StateEncoding enum.
+            i (Tensor<...>): Time index.
 
         Returns:
-            Next encoded state distribution (Tensor<..., encoded_state_size>).
+            derivatives of current state wrt to time (Tensor<..., encoded_state_size>).
         """
-        dt = self.dt
 
-        x = decode_mean(z, encoding)
-        covar = decode_covar(z, encoding)
-
-        # Define acceleration.
-        mean = torch.stack(
+        return torch.stack(
             [
-                x[..., 0] + x[..., 4] * dt,
-                x[..., 1] + x[..., 5] * dt,
-                x[..., 2] + x[..., 6] * dt,
-                x[..., 3] + x[..., 7] * dt,
-                x[..., 4] + self._acceleration(x[..., 4], u[..., 0]) * dt,
-                x[..., 5] + self._acceleration(x[..., 5], u[..., 1]) * dt,
-                x[..., 6] + self._acceleration(x[..., 6], u[..., 2]) * dt,
-                x[..., 7] + self._acceleration(x[..., 7], u[..., 3]) * dt,
+                z[..., 4],
+                z[..., 5],
+                z[..., 6],
+                z[..., 7],
+                self._acceleration(z[..., 4], u[..., 0]),
+                self._acceleration(z[..., 5], u[..., 1]),
+                self._acceleration(z[..., 6], u[..., 2]),
+                self._acceleration(z[..., 7], u[..., 3]),
             ],
             dim=-1)
-
-        return encode(mean, C=covar, encoding=encoding)
 
     def _acceleration(self, x_dot, u):
         x_dot_dot = x_dot * (1 - self.alpha * self.dt / self.m)

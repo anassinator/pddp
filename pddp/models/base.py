@@ -16,8 +16,16 @@
 
 import torch
 
-from ..utils.encoding import StateEncoding
+from enum import IntEnum
+
+from ..utils.encoding import StateEncoding, decode_covar, decode_mean, encode
 from ..utils.classproperty import classproperty
+
+
+class Integrator(IntEnum):
+    FW_EULER = 0
+    MIDPOINT = 1
+    RUNGE_KUTTA = 2
 
 
 class DynamicsModel(torch.nn.Module):
@@ -60,24 +68,52 @@ class DynamicsModel(torch.nn.Module):
         """
         raise NotImplementedError
 
-    def forward(self,
-                z,
-                u,
-                i,
-                encoding=StateEncoding.DEFAULT,
-                identical_inputs=False,
-                **kwargs):
+    def dynamics(self, z, u, i, **kwargs):
         """Dynamics model function.
 
         Args:
             z (Tensor<..., encoded_state_size>): Encoded state distribution.
             u (Tensor<..., action_size>): Action vector(s).
             i (Tensor<...>): Time index.
+
+        Returns:
+            derivatives of current state wrt to time (Tensor<..., encoded_state_size>).
+        """
+        raise NotImplementedError
+
+    def forward(self,
+                z,
+                u,
+                i,
+                encoding=StateEncoding.DEFAULT,
+                int_method=Integrator.RUNGE_KUTTA,
+                **kwargs):
+        """Dynamics model function.
+
+        Args:
+            z (Tensor<..., encoded_state_size>): Encoded state distribution.
+            u (Tensor<..., action_size>): Action vector(s).
+            i (int): Time index.
             encoding (int): StateEncoding enum.
-            identical_inputs (bool): Whether the batched inputs can be
-                assumed identical or not.
 
         Returns:
             Next encoded state distribution (Tensor<..., encoded_state_size>).
         """
-        raise NotImplementedError
+        mean = decode_mean(z, encoding)
+        C = decode_covar(z, encoding)
+        if int_method == Integrator.FW_EULER:
+            dmean = self.dynamics(mean, u, i)
+            mean = mean + dmean * self.dt
+        elif int_method == Integrator.MIDPOINT:
+            dmean = self.dynamics(mean, u, i)
+            mid = mean + dmean * self.dt / 2
+            dmid = self.dynamics(mid, u, i)
+            mean = mean + dmid * self.dt
+        elif int_method == Integrator.RUNGE_KUTTA:
+            d1 = self.dynamics(mean, u, i)
+            d2 = self.dynamics(mean + d1 * self.dt / 2, u, i)
+            d3 = self.dynamics(mean + d2 * self.dt / 2, u, i)
+            d4 = self.dynamics(mean + d3 * self.dt, u, i)
+            mean = mean + (d1 + 2 * d2 + 2 * d3 + d4) * (self.dt / 6)
+
+        return encode(mean, C=C, encoding=encoding)
