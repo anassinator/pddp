@@ -18,7 +18,8 @@ import torch
 
 from enum import IntEnum
 
-from ..utils.encoding import StateEncoding, decode_covar, decode_mean, encode
+from ..utils.encoding import (StateEncoding, decode_covar, decode_var,
+                              decode_mean, encode)
 from ..utils.classproperty import classproperty
 
 
@@ -100,7 +101,9 @@ class DynamicsModel(torch.nn.Module):
             Next encoded state distribution (Tensor<..., encoded_state_size>).
         """
         mean = decode_mean(z, encoding)
+        var = decode_var(z, encoding)
         C = decode_covar(z, encoding)
+
         if int_method == Integrator.FW_EULER:
             dmean = self.dynamics(mean, u, i)
             mean = mean + dmean * self.dt
@@ -116,4 +119,7 @@ class DynamicsModel(torch.nn.Module):
             d4 = self.dynamics(mean + d3 * self.dt, u, i)
             mean = mean + (d1 + 2 * d2 + 2 * d3 + d4) * (self.dt / 6)
 
-        return encode(mean, C=C, encoding=encoding)
+        try:
+            return encode(mean, C=C, encoding=encoding)
+        except RuntimeError:
+            return encode(mean, var=var, encoding=encoding)
