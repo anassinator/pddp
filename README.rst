@@ -10,6 +10,10 @@ dynamics. This is an implementation of Yunpeng Pan and Evangelos A. Theodorou's
 paper in `PyTorch <https://pytorch.org>`_,
 [`1 <https://papers.nips.cc/paper/5248-probabilistic-differential-dynamic-programming>`_].
 
+Warning
+-------
+This is a work in progress and does not work/converge as is yet.
+
 Install
 -------
 
