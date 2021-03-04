@@ -18,8 +18,7 @@ import torch
 
 from enum import IntEnum
 
-from ..utils.encoding import (StateEncoding, decode_covar, decode_var,
-                              decode_mean, encode)
+from ..utils.encoding import (StateEncoding, decode_covar, decode_var, decode_mean, encode)
 from ..utils.classproperty import classproperty
 
 
@@ -30,9 +29,7 @@ class Integrator(IntEnum):
 
 
 class DynamicsModel(torch.nn.Module):
-
     """Base dynamics model."""
-
     def reset_parameters(self, initializer=torch.nn.init.normal_):
         """Resets all parameters that require gradients with random values.
 
@@ -82,13 +79,7 @@ class DynamicsModel(torch.nn.Module):
         """
         raise NotImplementedError
 
-    def forward(self,
-                z,
-                u,
-                i,
-                encoding=StateEncoding.DEFAULT,
-                int_method=Integrator.RUNGE_KUTTA,
-                **kwargs):
+    def forward(self, z, u, i, encoding=StateEncoding.DEFAULT, int_method=Integrator.MIDPOINT, **kwargs):
         """Dynamics model function.
 
         Args:

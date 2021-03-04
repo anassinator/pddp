@@ -23,7 +23,6 @@ from enum import IntEnum
 
 
 class StateEncoding(IntEnum):
-
     """State encoding types."""
 
     # Encode full covariance matrix.
@@ -179,8 +178,7 @@ def decode_covar(Z, encoding=StateEncoding.DEFAULT, state_size=None):
             raise NotImplementedError("Expected a 1D or 2D tensor")
     elif encoding == StateEncoding.UPPER_TRIANGULAR_CHOLESKY:
         L = _L_from_flat_triu(other, state_size)
-        return (L.transpose(dim0=-2, dim1=-1).bmm(L)
-                if L.dim() > 2 else L.t().mm(L))
+        return (L.transpose(dim0=-2, dim1=-1).bmm(L) if L.dim() > 2 else L.t().mm(L))
     elif encoding == StateEncoding.VARIANCE_ONLY:
         if other.dim() == 1:
             return other.diag()
@@ -386,8 +384,7 @@ def _split(Z, encoding=StateEncoding.DEFAULT, state_size=None):
         mean, other = torch.split(Z, [state_size, n_other], dim=-1)
     else:
         mean = Z
-        other = torch.empty(
-            0, dtype=Z.dtype, device=Z.device, requires_grad=Z.requires_grad)
+        other = torch.empty(0, dtype=Z.dtype, device=Z.device, requires_grad=Z.requires_grad)
 
     return mean, other, state_size
 
@@ -557,7 +554,7 @@ def _cholesky(C, jitter=1e-12, max_jitter=10):
     while True:
         try:
             C_ = C + jitter * I
-            return C_.potrf()
+            return C_.cholesky()
         except RuntimeError:
             jitter *= 10
             if jitter > max_jitter:

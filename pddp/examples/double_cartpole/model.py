@@ -25,7 +25,6 @@ from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
 
 
 class DoubleCartpoleDynamicsModel(DynamicsModel):
-
     """Double cartpole dynamics model.
 
     Note:
@@ -33,16 +32,7 @@ class DoubleCartpoleDynamicsModel(DynamicsModel):
         action: [F]
         theta: 0 is pointing up and increasing clockwise.
     """
-
-    def __init__(self,
-                 dt,
-                 mc=0.5,
-                 mp1=0.5,
-                 mp2=0.5,
-                 l1=0.6,
-                 l2=0.6,
-                 mu=0.1,
-                 g=9.80665):
+    def __init__(self, dt, mc=0.5, mp1=0.5, mp2=0.5, l1=0.6, l2=0.6, mu=0.1, g=9.80665):
         """Constructs a DoubleCartpoleDynamicsModel.
 
         Args:
@@ -168,20 +158,18 @@ class DoubleCartpoleDynamicsModel(DynamicsModel):
         ], dim=-1).transpose(-2, -1)
         # yapf: enable
 
-        sol = torch.gesv(b, A)[0].transpose(-2, -1)
+        sol = torch.solve(b, A)[0].transpose(-2, -1)
 
         # For symplectic integration.
         x_dot_dot = sol[..., 0].view(x_dot.shape)
         theta1_dot_dot = sol[..., 1].view(theta1_dot.shape)
         theta2_dot_dot = sol[..., 2].view(theta2_dot.shape)
 
-        return torch.stack(
-            [
-                x_dot,
-                x_dot_dot,
-                theta1_dot,
-                theta1_dot_dot,
-                theta2_dot,
-                theta2_dot_dot,
-            ],
-            dim=-1)
+        return torch.stack([
+            x_dot,
+            x_dot_dot,
+            theta1_dot,
+            theta1_dot_dot,
+            theta2_dot,
+            theta2_dot_dot,
+        ], dim=-1)

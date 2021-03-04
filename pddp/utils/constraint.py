@@ -59,9 +59,7 @@ def constrain_env(min_bounds, max_bounds):
     Returns:
         Decorator that constrains an Env.
     """
-
     def decorator(cls):
-
         def apply_fn(self, u):
             """Applies an action to the environment.
 
@@ -91,18 +89,12 @@ def constrain_model(min_bounds, max_bounds):
     Returns:
         Decorator that constrains a DynamicsModel.
     """
-
     def decorator(cls):
-
         def init_fn(self, *args, **kwargs):
             """Constructs a DynamicsModel."""
             _init_fn(self, *args, **kwargs)
-            self.max_bounds = torch.nn.Parameter(
-                torch.tensor(max_bounds).expand(cls.action_size),
-                requires_grad=False)
-            self.min_bounds = torch.nn.Parameter(
-                torch.tensor(max_bounds).expand(cls.action_size),
-                requires_grad=False)
+            self.max_bounds = torch.nn.Parameter(torch.tensor(max_bounds).expand(cls.action_size), requires_grad=False)
+            self.min_bounds = torch.nn.Parameter(torch.tensor(max_bounds).expand(cls.action_size), requires_grad=False)
 
         def forward_fn(self, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
             """Dynamics model function.
@@ -201,7 +193,7 @@ def boxqp(x0,
         clamped[:] = 0
         clamped[(x == lower) * (g > 0)] = 1
         clamped[(x == upper) * (g < 0)] = 1
-        free = 1 - clamped
+        free = (1 - clamped).bool()
 
         # check if all clamped
         if all(clamped):
@@ -219,7 +211,7 @@ def boxqp(x0,
             Qfree = Q[free][:, free]
             # factorize
             try:
-                Ufree = Qfree.potrf()
+                Ufree = Qfree.cholesky()
             except RuntimeError:
                 if not quiet:
                     print('Qfree not positive definite:\n', Qfree)
@@ -236,7 +228,7 @@ def boxqp(x0,
         # get search direction
         g_clamped = Q.matmul(x * clamped.to(x.dtype)) + c
         search = torch.zeros_like(x)
-        search[free] = -torch.potrs(g_clamped[free], Ufree).flatten() - x[free]
+        search[free] = -torch.cholesky_solve(g_clamped[free].unsqueeze(-1), Ufree).flatten() - x[free]
 
         # check if descent direction
         sdotg = (search * g).sum()

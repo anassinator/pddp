@@ -18,11 +18,11 @@ def read(fname):
 
 BASE_URL = "https://github.com/anassinator/pddp"
 INSTALL_REQUIRES = [
-    "gym==0.10.*",
+    "gym>=0.10.*",
     "numpy>=1.14.0",
     "six>=1.11.0",
-    "torch==0.4.1",
-    "tqdm==4.25.*",
+    "torch>=0.4.1",
+    "tqdm>=4.25.*",
     "enum34",
 ]
 

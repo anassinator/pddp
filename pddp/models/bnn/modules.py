@@ -36,8 +36,7 @@ from .losses import gaussian_log_likelihood
 from ...utils.constraint import constrain
 from ...utils.particles import particles_covar
 from ...utils.classproperty import classproperty
-from ...utils.encoding import (StateEncoding, decode_mean, decode_std,
-                               decode_covar_sqrt, encode)
+from ...utils.encoding import (StateEncoding, decode_mean, decode_std, decode_covar_sqrt, encode)
 from ...utils.angular import augment_state, infer_augmented_state_size
 
 
@@ -72,22 +71,17 @@ def bnn_dynamics_model_factory(state_size,
     angular = angular_indices is not None and non_angular_indices is not None
     augmented_state_size = state_size
     if angular:
-        augmented_state_size = infer_augmented_state_size(
-            angular_indices, non_angular_indices)
+        augmented_state_size = infer_augmented_state_size(angular_indices, non_angular_indices)
 
     should_constrain = constrain_min is not None and constrain_max is not None
 
     class ParticlesBNNDynamicsModel(DynamicsModel):
-
         """Bayesian neural network dynamics model."""
-
         def __init__(self):
             """Constructs a ParticlesBNNDynamicsModel."""
             super(ParticlesBNNDynamicsModel, self).__init__()
 
-            self.model = bayesian_model(augmented_state_size + action_size,
-                                        2 * state_size, hidden_features,
-                                        **kwargs)
+            self.model = bayesian_model(augmented_state_size + action_size, 2 * state_size, hidden_features, **kwargs)
 
             # Normalization parameters.
             self.register_buffer("X_mean", torch.tensor(0.0))
@@ -175,8 +169,7 @@ def bnn_dynamics_model_factory(state_size,
             optimizer = torch.optim.Adam(params, learning_rate, amsgrad=True)
 
             dataset = TensorDataset(X_, dX)
-            dataloader = DataLoader(
-                dataset, batch_size=batch_size, shuffle=True)
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
             datagen = _cycle(dataloader, n_iter)
             with tqdm(datagen, total=n_iter, desc="BNN", disable=quiet) as pbar:
                 for x_, dx in pbar:
@@ -185,8 +178,7 @@ def bnn_dynamics_model_factory(state_size,
                     x_ = self._normalize_input(x_)
                     output = self.model(x_, resample=resample)
 
-                    mean, log_std = output.split(
-                        [state_size, state_size], dim=-1)
+                    mean, log_std = output.split([state_size, state_size], dim=-1)
                     mean, log_std = self._scale_output(mean, log_std)
 
                     loss = -likelihood(dx, mean, log_std.exp()).mean()
@@ -197,14 +189,7 @@ def bnn_dynamics_model_factory(state_size,
                     loss.backward()
                     optimizer.step()
 
-        def forward(self,
-                    X,
-                    u,
-                    i,
-                    resample=False,
-                    use_predicted_std=False,
-                    independent_noise=False,
-                    **kwargs):
+        def forward(self, X, u, i, resample=False, use_predicted_std=False, independent_noise=False, **kwargs):
             """Dynamics model function.
 
             Args:
@@ -264,9 +249,7 @@ def bnn_dynamics_model_factory(state_size,
             return X + dx
 
     class BNNDynamicsModel(ParticlesBNNDynamicsModel):
-
         """Bayesian neural network dynamics model."""
-
         def __init__(self, n_particles=100):
             """Constructs a BNNDynamicsModel.
 
@@ -334,8 +317,7 @@ def bnn_dynamics_model_factory(state_size,
                     deltas = self.output[i - 1] - mean
                     if not identical_inputs and X.dim() == 3:
                         deltas = deltas.permute(1, 0, 2)
-                        eps = deltas.transpose(-2, -1).gesv(
-                            L.transpose(-2, -1))[0]
+                        eps = deltas.transpose(-2, -1).solve(L.transpose(-2, -1))[0]
                         eps = eps.permute(2, 0, 1).detach()
                     else:
                         if X.dim() == 3:
@@ -343,8 +325,7 @@ def bnn_dynamics_model_factory(state_size,
                             L_ = L[0]
                         else:
                             L_ = L
-                        eps = torch.trtrs(
-                            deltas.t(), L_, transpose=True)[0].t().detach()
+                        eps = torch.trtrs(deltas.t(), L_, transpose=True)[0].t().detach()
                         should_expand = True
                 else:
                     eps = self.eps_in[i]
@@ -360,8 +341,7 @@ def bnn_dynamics_model_factory(state_size,
             if X.dim() == 3:
                 X = X.permute(1, 0, 2)
 
-            output = super(BNNDynamicsModel, self).forward(
-                X, u, i, resample=resample, **kwargs)
+            output = super(BNNDynamicsModel, self).forward(X, u, i, resample=resample, **kwargs)
 
             if output.dim() == 3:
                 output = output.permute(1, 0, 2)
@@ -370,8 +350,7 @@ def bnn_dynamics_model_factory(state_size,
                 self.output[i] = output.detach()
 
             M = output.mean(dim=0)
-            if encoding in (StateEncoding.FULL_COVARIANCE_MATRIX,
-                            StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
+            if encoding in (StateEncoding.FULL_COVARIANCE_MATRIX, StateEncoding.UPPER_TRIANGULAR_CHOLESKY):
                 try:
                     # Compute full covariance matrix.
                     C = particles_covar(output)
@@ -411,13 +390,11 @@ def _cycle(iterable, total):
 
 
 class BDropout(torch.nn.Dropout):
-
     """Binary dropout with regularization and resampling.
 
     See: Gal Y., Ghahramani Z., "Dropout as a Bayesian Approximation:
     Representing Model Uncertainty in Deep Learning", 2016.
     """
-
     def __init__(self, rate=0.1, reg=1.0, **kwargs):
         """Constructs a BDropout.
 
@@ -492,12 +469,10 @@ class BDropout(torch.nn.Dropout):
 
 
 class CDropout(BDropout):
-
     """Concrete dropout with regularization and resampling.
 
     See: Gal Y., Hron, J., Kendall, A. "Concrete Dropout", 2017.
     """
-
     def __init__(self, temperature=0.1, rate=0.5, reg=1.0, **kwargs):
         """Constructs a CDropout.
 
@@ -507,8 +482,7 @@ class CDropout(BDropout):
             reg (float): Regularization scale.
         """
         super(CDropout, self).__init__(rate, reg, **kwargs)
-        self.temperature = Parameter(
-            torch.tensor(temperature), requires_grad=False)
+        self.temperature = Parameter(torch.tensor(temperature), requires_grad=False)
 
         # We need to constrain p to [0, 1], so we train logit(p).
         self.logit_p = Parameter(-torch.log(self.p.reciprocal() - 1.0))
@@ -565,8 +539,7 @@ class CDropout(BDropout):
         if resample:
             noise = torch.rand_like(x)
             resampled = True
-        elif (self.concrete_noise is None or
-              sample_shape != self.concrete_noise.shape):
+        elif (self.concrete_noise is None or sample_shape != self.concrete_noise.shape):
             sample = x.view(-1, *sample_shape)[0]
             self._update_noise(sample)
             noise = self.noise
@@ -588,8 +561,8 @@ class CDropout(BDropout):
         Returns:
             Module representation (str).
         """
-        return 'rate={}, temperature={}, regularizer_scale={}'.format(
-            1 - self.logit_p.sigmoid(), self.temperature, self.reg)
+        return 'rate={}, temperature={}, regularizer_scale={}'.format(1 - self.logit_p.sigmoid(), self.temperature,
+                                                                      self.reg)
 
 
 def phi(x):
@@ -601,11 +574,9 @@ def inv_phi(y):
 
 
 class TLNDropout(BDropout):
-
     """ Truncated Log-Normal Dropout
         http://papers.nips.cc/paper/7254-structured-bayesian-pruning-via-log-normal-multiplicative-noise.pdf
     """
-
     def __init__(self, interval=torch.tensor([-4.0, 0.0]), reg=1.0, **kwargs):
         """Constructs a TLNDropout layer.
 
@@ -631,12 +602,10 @@ class TLNDropout(BDropout):
         a, b = self.interval
         mu0 = max(a + 1e-2 * (b - a), 0) + min(b - 1e-2 * (b - a), 0)
         logit_mu0 = -torch.log((b - a) / (mu0 - a) - 1)
-        self.logit_posterior_mean.data = torch.tensor(logit_mu0).repeat(
-            *input_shape)
+        self.logit_posterior_mean.data = torch.tensor(logit_mu0).repeat(*input_shape)
 
         # set posterior_std close to the minimum
-        self.logit_posterior_std.data = torch.zeros(*input_shape).uniform_(
-            -3.0, -1.0)
+        self.logit_posterior_std.data = torch.zeros(*input_shape).uniform_(-3.0, -1.0)
 
     def regularization(self, *args, **kwargs):
         """Computes the regularization cost.
@@ -656,9 +625,8 @@ class TLNDropout(BDropout):
         beta = (b - mu) / sigma
         phi_alpha = phi(alpha)
         Z = phi(beta) - phi_alpha
-        reg = (torch.log(b - a) - torch.log(sigma * np.sqrt(2 * np.pi)) -
-               torch.log(Z) - (
-                   (alpha * phi(alpha) - beta * phi(beta)) / sigma) / (2 * Z))
+        reg = (torch.log(b - a) - torch.log(sigma * np.sqrt(2 * np.pi)) - torch.log(Z) -
+               ((alpha * phi(alpha) - beta * phi(beta)) / sigma) / (2 * Z))
         return self.reg * reg.sum()
 
     def _update_noise(self, x):
@@ -737,14 +705,11 @@ class TLNDropout(BDropout):
         Returns:
             Module representation (str).
         """
-        return "interval={}, s_interval={}, regularizer scale={}".format(
-            self.interval, self.s_interval, self.reg)
+        return "interval={}, s_interval={}, regularizer scale={}".format(self.interval, self.s_interval, self.reg)
 
 
 class BSequential(torch.nn.Sequential):
-
     """Extension of Sequential module with regularization and resampling."""
-
     def resample(self):
         """Resample all child modules."""
         for child in self.children():
@@ -764,10 +729,8 @@ class BSequential(torch.nn.Sequential):
                 reg += child.regularization()
             elif isinstance(child, BDropout):
                 for next_child in children[i:]:
-                    if hasattr(next_child, "weight") and hasattr(
-                            next_child, "bias"):
-                        reg += child.regularization(next_child.weight,
-                                                    next_child.bias)
+                    if hasattr(next_child, "weight") and hasattr(next_child, "bias"):
+                        reg += child.regularization(next_child.weight, next_child.bias)
                         break
         return reg
 
@@ -794,11 +757,8 @@ def bayesian_model(in_features,
                    hidden_features,
                    nonlin=torch.nn.ReLU,
                    output_nonlin=None,
-                   weight_initializer=partial(
-                       torch.nn.init.xavier_normal_,
-                       gain=torch.nn.init.calculate_gain("relu")),
-                   bias_initializer=partial(
-                       torch.nn.init.uniform_, a=-0.1, b=0.1),
+                   weight_initializer=partial(torch.nn.init.xavier_normal_, gain=torch.nn.init.calculate_gain("relu")),
+                   bias_initializer=partial(torch.nn.init.uniform_, a=-0.1, b=0.1),
                    initial_p=0.5,
                    dropout_layers=CDropout,
                    input_dropout=None):

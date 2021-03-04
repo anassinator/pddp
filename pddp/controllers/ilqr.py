@@ -28,12 +28,10 @@ from enum import IntEnum
 from .base import Controller
 from ..utils.encoding import StateEncoding, decode_mean
 from ..utils.constraint import clamp, boxqp, BOXQP_RESULTS
-from ..utils.evaluation import (batch_eval_cost, batch_eval_dynamics, eval_cost,
-                                eval_dynamics)
+from ..utils.evaluation import (batch_eval_cost, batch_eval_dynamics, eval_cost, eval_dynamics)
 
 
 class iLQRState(IntEnum):
-
     """iLQR optimization step state."""
 
     # Undefined state.
@@ -56,8 +54,7 @@ class iLQRState(IntEnum):
 
     def should_retry(self):
         """Whether the state is expected to improve by retrying (bool)."""
-        return self in (iLQRState.UNDEFINED, iLQRState.NOT_PD,
-                        iLQRState.REJECTED)
+        return self in (iLQRState.UNDEFINED, iLQRState.NOT_PD, iLQRState.REJECTED)
 
     def is_terminal(self):
         """Whether the state is considered terminal (bool)."""
@@ -65,9 +62,7 @@ class iLQRState(IntEnum):
 
 
 class iLQRController(Controller):
-
     """Iterative Linear Quadratic Regulator controller."""
-
     def __init__(self, env, model, cost, model_opts={}, cost_opts={}, **kwargs):
         """Constructs a iLQRController.
 
@@ -122,21 +117,20 @@ class iLQRController(Controller):
               **kwargs):
         # Backward pass.
         try:
-            k, K = backward(
-                Z,
-                F_z,
-                F_u,
-                L,
-                L_z,
-                L_u,
-                L_zz,
-                L_uz,
-                L_uu,
-                reg=self._mu,
-                u_min=u_min,
-                u_max=u_max,
-                U=U,
-                quiet=quiet)
+            k, K = backward(Z,
+                            F_z,
+                            F_u,
+                            L,
+                            L_z,
+                            L_u,
+                            L_zz,
+                            L_uz,
+                            L_uu,
+                            reg=self._mu,
+                            u_min=u_min,
+                            u_max=u_max,
+                            U=U,
+                            quiet=quiet)
         except RuntimeError:
             if not quiet:
                 traceback.print_exc()
@@ -145,19 +139,17 @@ class iLQRController(Controller):
             return iLQRState.NOT_PD, Z, U, J_opt
 
         # Batch-backtracking line search.
-        Z_new_b, U_new_b = _control_law(
-            self.model,
-            Z,
-            U,
-            k,
-            K,
-            alphas,
-            encoding,
-            self._model_opts,
-            u_min=u_min,
-            u_max=u_max)
-        J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b, encoding,
-                                   self._cost_opts)
+        Z_new_b, U_new_b = _control_law(self.model,
+                                        Z,
+                                        U,
+                                        k,
+                                        K,
+                                        alphas,
+                                        encoding,
+                                        self._model_opts,
+                                        u_min=u_min,
+                                        u_max=u_max)
+        J_new_b = _trajectory_cost(self.cost, Z_new_b, U_new_b, encoding, self._cost_opts)
         amin = J_new_b.argmin()
         J_new = J_new_b[amin].detach()
         Z_new = Z_new_b[:, amin].detach()
@@ -195,40 +187,38 @@ class iLQRController(Controller):
         if U is None:
             U = self._U_nominal
 
-        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(
-            z0,
-            U,
-            self.model,
-            self.cost,
-            encoding,
-            batch_rollout,
-            self._model_opts,
-            self._cost_opts,
-            u_min=u_min,
-            u_max=u_max)
+        Z, F_z, F_u, L, L_z, L_u, L_zz, L_uz, L_uu = forward(z0,
+                                                             U,
+                                                             self.model,
+                                                             self.cost,
+                                                             encoding,
+                                                             batch_rollout,
+                                                             self._model_opts,
+                                                             self._cost_opts,
+                                                             u_min=u_min,
+                                                             u_max=u_max)
         J_opt = L.sum()
         alphas = alphas.to(dtype=Z.dtype, device=Z.device)
 
         state = iLQRState.UNDEFINED
         while state.should_retry():
-            state, Z, U, J_opt = self._step(
-                Z,
-                U,
-                F_z,
-                F_u,
-                L,
-                L_z,
-                L_u,
-                L_zz,
-                L_uz,
-                L_uu,
-                J_opt,
-                encoding=encoding,
-                batch_rollout=batch_rollout,
-                alphas=alphas,
-                u_min=u_min,
-                u_max=u_max,
-                **kwargs)
+            state, Z, U, J_opt = self._step(Z,
+                                            U,
+                                            F_z,
+                                            F_u,
+                                            L,
+                                            L_z,
+                                            L_u,
+                                            L_zz,
+                                            L_uz,
+                                            L_uu,
+                                            J_opt,
+                                            encoding=encoding,
+                                            batch_rollout=batch_rollout,
+                                            alphas=alphas,
+                                            u_min=u_min,
+                                            u_max=u_max,
+                                            **kwargs)
             if on_iteration:
                 on_iteration(i, state, Z.detach(), U.detach(), J_opt.detach())
 
@@ -237,7 +227,7 @@ class iLQRController(Controller):
     def fit(self,
             U,
             encoding=StateEncoding.DEFAULT,
-            n_iterations=50,
+            n_iterations=10,
             tol=5e-6,
             max_reg=1e10,
             batch_rollout=True,
@@ -296,19 +286,18 @@ class iLQRController(Controller):
                     on_iteration(iteration, state, Z, U, J_opt)
 
             for i in pbar:
-                state = self.step(
-                    z0,
-                    U=None,
-                    i=i,
-                    encoding=encoding,
-                    batch_rollout=batch_rollout,
-                    alphas=alphas,
-                    u_min=u_min,
-                    u_max=u_max,
-                    on_iteration=_on_iteration,
-                    tol=tol,
-                    max_reg=max_reg,
-                    **kwargs)
+                state = self.step(z0,
+                                  U=None,
+                                  i=i,
+                                  encoding=encoding,
+                                  batch_rollout=batch_rollout,
+                                  alphas=alphas,
+                                  u_min=u_min,
+                                  u_max=u_max,
+                                  on_iteration=_on_iteration,
+                                  tol=tol,
+                                  max_reg=max_reg,
+                                  **kwargs)
 
                 if state.is_terminal():
                     break
@@ -338,8 +327,7 @@ class iLQRController(Controller):
         """
         if not mpc:
             if self._U_nominal is None:
-                raise RuntimeError(
-                    "You need to either call fit or initialize _U_nominal")
+                raise RuntimeError("You need to either call fit or initialize _U_nominal")
             if self._Z_nominal is not None:
                 if ignore_uncertainty:
                     x = decode_mean(z, encoding)
@@ -354,11 +342,9 @@ class iLQRController(Controller):
                 return self._U_nominal[i]
         else:
             self._reset_reg()
-            self.step(
-                z, i=i, encoding=encoding, u_min=u_min, u_max=u_max, **kwargs)
+            self.step(z, i=i, encoding=encoding, u_min=u_min, u_max=u_max, **kwargs)
             u = self._U_nominal[0]
-            self._U_nominal = torch.cat(
-                [self._U_nominal[1:], self._U_nominal[-1:]], 0)
+            self._U_nominal = torch.cat([self._U_nominal[1:], self._U_nominal[-1:]], 0)
             return u
 
     def _reset_reg(self):
@@ -449,8 +435,7 @@ def forward(z0,
     L = torch.empty(N + 1, **tensor_opts)
     L_z = torch.empty(N + 1, encoded_state_size, **tensor_opts)
     L_u = torch.empty(N, action_size, **tensor_opts)
-    L_zz = torch.empty(N + 1, encoded_state_size, encoded_state_size,
-                       **tensor_opts)
+    L_zz = torch.empty(N + 1, encoded_state_size, encoded_state_size, **tensor_opts)
     L_uz = torch.empty(N, action_size, encoded_state_size, **tensor_opts)
     L_uu = torch.empty(N, action_size, action_size, **tensor_opts)
 
@@ -461,16 +446,13 @@ def forward(z0,
         if u_min is not None and u_max is not None:
             u = clamp(u, u_min, u_max)
 
-        L[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i] = eval_cost_fn(
-            cost, z, u, i, encoding=encoding, **cost_opts)
+        L[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i] = eval_cost_fn(cost, z, u, i, encoding=encoding, **cost_opts)
 
-        Z[i + 1], F_z[i], F_u[i] = eval_dynamics_fn(
-            model, z, u, i, encoding=encoding, **model_opts)
+        Z[i + 1], F_z[i], F_u[i] = eval_dynamics_fn(model, z, u, i, encoding=encoding, **model_opts)
 
     # Terminal cost.
     z = Z[-1].detach().requires_grad_()
-    L[-1], L_z[-1], _, L_zz[-1], _, _ = eval_cost_fn(
-        cost, z, None, i, terminal=True, encoding=encoding, **cost_opts)
+    L[-1], L_z[-1], _, L_zz[-1], _, _ = eval_cost_fn(cost, z, None, i, terminal=True, encoding=encoding, **cost_opts)
 
     Z.detach_()
     F_z.detach_()
@@ -585,16 +567,14 @@ def backward(Z,
         reg = reg * torch.eye(encoded_state_size, **tensor_opts)
 
         for i in range(N - 1, -1, -1):
-            Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i],
-                                           L_zz[i], L_uz[i], L_uu[i], V_z, V_zz)
-            _, Q_u_reg, _, Q_uz_reg, Q_uu_reg = Q(F_z[i], F_u[i], L_z[i],
-                                                  L_u[i], L_zz[i], L_uz[i],
-                                                  L_uu[i], V_z, V_zz + reg)
+            Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i], V_z, V_zz)
+            _, Q_u_reg, _, Q_uz_reg, Q_uu_reg = Q(F_z[i], F_u[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i], V_z,
+                                                  V_zz + reg)
 
             if u_min is None or u_max is None:
-                Q_uu_chol = Q_uu_reg.potrf()
+                Q_uu_chol = Q_uu_reg.cholesky()
                 Q_uz_u = torch.cat([Q_u_reg.unsqueeze(1), Q_uz_reg], dim=-1)
-                kK = -Q_uz_u.potrs(Q_uu_chol)
+                kK = -Q_uz_u.cholesky_solve(Q_uu_chol)
                 k[i] = kK[:, 0]
                 K[i] = kK[:, 1:]
             else:
@@ -602,18 +582,16 @@ def backward(Z,
                 lower = u_min - U[i]
                 upper = u_max - U[i]
                 k_ip1 = k[i + 1] if i < N - 1 else k[-1]
-                k[i], result, Q_uu_chol_free, free = boxqp(
-                    k_ip1, Q_uu_reg, Q_u_reg, lower, upper, quiet=True)
+                k[i], result, Q_uu_chol_free, free = boxqp(k_ip1, Q_uu_reg, Q_u_reg, lower, upper, quiet=True)
 
                 if result < 1:
-                    raise RuntimeError("BoxQP failed: {}".format(
-                        BOXQP_RESULTS[result]))
+                    raise RuntimeError("BoxQP failed: {}".format(BOXQP_RESULTS[result]))
 
                 # compute feedback matrix
                 if any(free):
                     idxs = free.nonzero().flatten()
                     Q_uz_free = Q_uz_reg[idxs, :]
-                    K_free = -torch.potrs(Q_uz_free, Q_uu_chol_free)
+                    K_free = -torch.cholesky_solve(Q_uz_free, Q_uu_chol_free)
                     K[i, idxs, :] = K_free
 
             V_z = Q_z + K[i].t().matmul(Q_u)
@@ -625,8 +603,7 @@ def backward(Z,
             V_zz = 0.5 * (V_zz + V_zz.t())  # To maintain symmetry.
     else:
         for i in range(N - 1, -1, -1):
-            Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i],
-                                           L_zz[i], L_uz[i], L_uu[i], V_z, V_zz)
+            Q_z, Q_u, Q_zz, Q_uz, Q_uu = Q(F_z[i], F_u[i], L_z[i], L_u[i], L_zz[i], L_uz[i], L_uu[i], V_z, V_zz)
 
             e_uu, E_uu = Q_uu.clone().eig(True)
             e_uu = e_uu[:, 0]
@@ -647,18 +624,16 @@ def backward(Z,
                 lower = u_min - U[i]
                 upper = u_max - U[i]
                 k_ip1 = k[i + 1] if i < N - 1 else k[-1]
-                k[i], result, Q_uu_chol_free, free = boxqp(
-                    k_ip1, Q_uu_reg, Q_u, lower, upper, quiet=True)
+                k[i], result, Q_uu_chol_free, free = boxqp(k_ip1, Q_uu_reg, Q_u, lower, upper, quiet=True)
 
                 if result < 1:
-                    raise RuntimeError("BoxQP failed: {}".format(
-                        BOXQP_RESULTS[result]))
+                    raise RuntimeError("BoxQP failed: {}".format(BOXQP_RESULTS[result]))
 
                 # compute feedback matrix
                 if any(free):
-                    idxs = free.nonzero().flatten()
+                    idxs = torch.nonzero(free, as_tuple=False).flatten()
                     Q_uz_free = Q_uz[idxs, :]
-                    K_free = -torch.potrs(Q_uz_free, Q_uu_chol_free)
+                    K_free = -torch.cholesky_solve(Q_uz_free, Q_uu_chol_free)
                     K[i, idxs, :] = K_free
 
             V_z = Q_z + K[i].t().matmul(Q_u)
@@ -675,16 +650,7 @@ def backward(Z,
 
 
 @torch.no_grad()
-def _control_law(model,
-                 Z,
-                 U,
-                 k,
-                 K,
-                 alpha,
-                 encoding=StateEncoding.DEFAULT,
-                 model_opts={},
-                 u_min=None,
-                 u_max=None):
+def _control_law(model, Z, U, k, K, alpha, encoding=StateEncoding.DEFAULT, model_opts={}, u_min=None, u_max=None):
     Z_new = torch.empty_like(Z)
     U_new = torch.empty_like(U)
     Z_new[0] = Z[0]
