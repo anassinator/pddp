@@ -22,9 +22,7 @@ from ..utils.gaussian_variable import GaussianVariable
 
 
 class GymEnv(Env):
-
     """OpenAI Gym environment."""
-
     def __init__(self, gym_env, render=False):
         """Constructs a GymEnv.
 
@@ -64,8 +62,7 @@ class GymEnv(Env):
         Args:
             u (Tensor<action_size>): Action vector.
         """
-        action = _action_from_u(u, self._action_shape, self._action_dtype,
-                                self._action_bounds)
+        action = _action_from_u(u, self._action_shape, self._action_dtype, self._action_bounds)
         obs, _, _, _ = self._env.step(action)
         self._state = _state_from_observation(obs)
 
@@ -81,8 +78,7 @@ class GymEnv(Env):
         Returns:
             State distribution (GaussianVariable<state_size>).
         """
-        return GaussianVariable(
-            self._state, var=var * torch.ones_like(self._state))
+        return GaussianVariable(self._state, var=var * torch.ones_like(self._state))
 
     def reset(self):
         """Resets the environment."""
@@ -114,9 +110,9 @@ def _action_from_u(u, space_shape, space_type, space_bounds):
     min_bounds, max_bounds = space_bounds
     if action.dim():
         for a, min_a, max_a in zip(action, min_bounds, max_bounds):
-            a.clamp_(min_a, max_a)
+            a = a.clamp(min_a, max_a)
     else:
-        action.clamp_(min_bounds[0], max_bounds[0])
+        action = action.clamp(min_bounds[0], max_bounds[0])
 
     action = action.detach().cpu().numpy()
     return action.astype(space_type)
@@ -136,8 +132,7 @@ def _state_from_observation(obs):
     elif isinstance(obs, (int, float, bool)):
         state = np.array([obs])
     else:
-        raise NotImplementedError("Unsupported observation type: {}".format(
-            type(obs)))
+        raise NotImplementedError("Unsupported observation type: {}".format(type(obs)))
 
     state = torch.tensor(state)
     state = state.to(torch.get_default_dtype())

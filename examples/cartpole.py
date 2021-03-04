@@ -35,12 +35,7 @@ def plot_loss(J_hist):
     plt.show(block=False)
 
 
-def plot_path(Z,
-              encoding=ENCODING,
-              indices=None,
-              reality=None,
-              std_scale=1.0,
-              legend=True):
+def plot_path(Z, encoding=ENCODING, indices=None, reality=None, std_scale=1.0, legend=True):
     if not PLOT:
         return
 
@@ -75,18 +70,12 @@ def plot_path(Z,
 
         for i in range(1, 4):
             j = std_scale * i
-            plt.gca().fill_between(
-                t.flat, (mean - j * std).flat, (mean + j * std).flat,
-                color=colors[index],
-                alpha=1.0 / (i + 1))
+            plt.gca().fill_between(t.flat, (mean - j * std).flat, (mean + j * std).flat,
+                                   color=colors[index],
+                                   alpha=1.0 / (i + 1))
 
     if legend:
-        plt.legend(
-            bbox_to_anchor=(0.0, 1.0, 1.0, 0.7),
-            loc="upper left",
-            ncol=4,
-            mode="expand",
-            borderaxespad=0.)
+        plt.legend(bbox_to_anchor=(0.0, 1.0, 1.0, 0.7), loc="upper left", ncol=4, mode="expand", borderaxespad=0.)
 
     plt.xlim(0, N)
     plt.axhline(0, linestyle="--", color="#333333", linewidth=0.25)
@@ -152,15 +141,14 @@ if __name__ == "__main__":
     )
 
     controller.train()
-    Z, U, state = controller.fit(
-        U,
-        encoding=ENCODING,
-        n_iterations=50,
-        on_iteration=on_iteration,
-        on_trial=on_trial,
-        max_trials=20,
-        u_min=UMIN,
-        u_max=UMAX)
+    Z, U, state = controller.fit(U,
+                                 encoding=ENCODING,
+                                 n_iterations=50,
+                                 on_iteration=on_iteration,
+                                 on_trial=on_trial,
+                                 max_trials=20,
+                                 u_min=UMIN,
+                                 u_max=UMAX)
 
     plt.figure()
     plot_loss(J_hist)
