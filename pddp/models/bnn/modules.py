@@ -325,7 +325,7 @@ def bnn_dynamics_model_factory(state_size,
                             L_ = L[0]
                         else:
                             L_ = L
-                        eps = torch.trtrs(deltas.t(), L_, transpose=True)[0].t().detach()
+                        eps = torch.triangular_solve(deltas.t(), L_, transpose=True)[0].t().detach()
                         should_expand = True
                 else:
                     eps = self.eps_in[i]
