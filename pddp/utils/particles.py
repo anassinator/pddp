@@ -30,11 +30,8 @@ def particulate_model(cls, n_particles=100):
     Returns:
         ParticlesDynamicsModel<cls> class.
     """
-
     class ParticleDynamicsModel(cls):
-
         """Particle dynamics model."""
-
         def __init__(self, *args, **kwargs):
             """Constructs a ParticleDynamicsModel."""
             super(ParticleDynamicsModel, self).__init__(*args, **kwargs)
@@ -90,7 +87,7 @@ def particulate_model(cls, n_particles=100):
                 deltas = self.output[i - 1] - mean
                 if not identical_inputs and X.dim() == 3:
                     deltas = deltas.permute(1, 0, 2)
-                    eps = deltas.transpose(-2, -1).gesv(L.transpose(-2, -1))[0]
+                    eps = deltas.transpose(-2, -1).solve(L.transpose(-2, -1))[0]
                     eps = eps.permute(2, 0, 1).detach()
                 else:
                     if X.dim() == 3:
@@ -98,8 +95,7 @@ def particulate_model(cls, n_particles=100):
                         L_ = L[0]
                     else:
                         L_ = L
-                    eps = torch.trtrs(
-                        deltas.t(), L_, transpose=True)[0].t().detach()
+                    eps = torch.triangular_solve(deltas.t(), L_, transpose=True)[0].t().detach()
                     should_expand = True
             else:
                 eps = self.eps[i]
@@ -112,14 +108,13 @@ def particulate_model(cls, n_particles=100):
             else:
                 X = X + eps.mm(L)
 
-            output = super(ParticleDynamicsModel, self).forward(
-                X,
-                U,
-                i,
-                encoding=StateEncoding.IGNORE_UNCERTAINTY,
-                identical_inputs=identical_inputs,
-                resample=resample,
-                **kwargs)
+            output = super(ParticleDynamicsModel, self).forward(X,
+                                                                U,
+                                                                i,
+                                                                encoding=StateEncoding.IGNORE_UNCERTAINTY,
+                                                                identical_inputs=identical_inputs,
+                                                                resample=resample,
+                                                                **kwargs)
             self.output[i] = output
 
             M = output.mean(dim=0)

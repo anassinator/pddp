@@ -22,7 +22,6 @@ from ..utils.encoding import StateEncoding, decode_covar, decode_mean
 
 
 class QRCost(Cost):
-
     r"""Quadratic cost function.
 
     Instantaneous cost:
@@ -33,7 +32,6 @@ class QRCost(Cost):
     Terminal cost:
         E[L(x)] = tr(Q \Sigma) + (\mu - x_goal)^T Q (\mu - x_goal)
     """
-
     def __init__(self, Q, R, Q_term=None, x_goal=0.0, u_goal=0.0):
         """Constructs a QRCost.
 
@@ -52,18 +50,15 @@ class QRCost(Cost):
         self.R = torch.nn.Parameter(R, requires_grad=False)
         self.Q_term = torch.nn.Parameter(Q_term, requires_grad=False)
 
-        self.x_goal = torch.nn.Parameter(
-            torch.tensor(x_goal), requires_grad=False)
-        self.u_goal = torch.nn.Parameter(
-            torch.tensor(u_goal), requires_grad=False)
+        if not isinstance(x_goal, torch.Tensor):
+            x_goal = torch.tensor(x_goal)
+        self.x_goal = torch.nn.Parameter(x_goal, requires_grad=False)
 
-    def forward(self,
-                z,
-                u,
-                i,
-                terminal=False,
-                encoding=StateEncoding.DEFAULT,
-                **kwargs):
+        if not isinstance(u_goal, torch.Tensor):
+            u_goal = torch.tensor(u_goal)
+        self.u_goal = torch.nn.Parameter(u_goal, requires_grad=False)
+
+    def forward(self, z, u, i, terminal=False, encoding=StateEncoding.DEFAULT, **kwargs):
         """Cost function.
 
         Args:
@@ -100,10 +95,8 @@ class QRCost(Cost):
 
 
 class SaturatingQRCost(Cost):
-
     r"""Saturating quadratic cost function.
     """
-
     def __init__(self, Q, R, Q_term=None, x_goal=0.0, u_goal=0.0):
         """Constructs a QRCost.
 
@@ -122,18 +115,10 @@ class SaturatingQRCost(Cost):
         self.R = torch.nn.Parameter(R, requires_grad=False)
         self.Q_term = torch.nn.Parameter(Q_term, requires_grad=False)
 
-        self.x_goal = torch.nn.Parameter(
-            torch.tensor(x_goal), requires_grad=False)
-        self.u_goal = torch.nn.Parameter(
-            torch.tensor(u_goal), requires_grad=False)
+        self.x_goal = torch.nn.Parameter(torch.tensor(x_goal), requires_grad=False)
+        self.u_goal = torch.nn.Parameter(torch.tensor(u_goal), requires_grad=False)
 
-    def forward(self,
-                z,
-                u,
-                i,
-                terminal=False,
-                encoding=StateEncoding.DEFAULT,
-                **kwargs):
+    def forward(self, z, u, i, terminal=False, encoding=StateEncoding.DEFAULT, **kwargs):
         """Cost function.
 
         Args:
@@ -159,8 +144,7 @@ class SaturatingQRCost(Cost):
             I_ = torch.eye(dx.shape[-1])
             IpCQ = I_ + CQ
             if dims > 1:
-                S1 = torch.gesv(Q.t().expand(C.shape[0], -1, -1),
-                                IpCQ.transpose(-1, -2))[0].transpose(-1, -2)
+                S1 = torch.solve(Q.t().expand(C.shape[0], -1, -1), IpCQ.transpose(-1, -2))[0].transpose(-1, -2)
                 detIpCQ = torch.stack([m.det().sqrt() for m in IpCQ])
                 S1dx = S1.bmm(dx.unsqueeze(-1)).squeeze()
                 cost = 1.0 - (-0.5 * (dx * S1dx).sum(-1)).exp() / detIpCQ

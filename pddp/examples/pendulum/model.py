@@ -81,29 +81,24 @@ class PendulumDynamicsModel(DynamicsModel):
         # No need: this is an exact dynamics model.
         pass
 
-    def forward(self, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
+    def dynamics(self, z, u, i):
         """Dynamics model function.
 
         Args:
             z (Tensor<..., encoded_state_size>): Encoded state distribution.
             u (Tensor<..., action_size>): Action vector(s).
-            i (int): Time index.
-            encoding (int): StateEncoding enum.
+            i (Tensor<...>): Time index.
 
         Returns:
-            Next encoded state distribution (Tensor<..., encoded_state_size>).
+            derivatives of current state wrt to time (Tensor<..., encoded_state_size>).
         """
-        dt = self.dt
         m = self.m
         l = self.l
         mu = self.mu
         g = self.g
 
-        mean = decode_mean(z, encoding)
-        var = decode_var(z, encoding)
-
-        theta = mean[..., 0]
-        theta_dot = mean[..., 1]
+        theta = z[..., 0]
+        theta_dot = z[..., 1]
         torque = u[..., 0]
 
         # Define acceleration.
@@ -111,9 +106,8 @@ class PendulumDynamicsModel(DynamicsModel):
         theta_dot_dot = torque - mu * theta_dot - 0.5 * temp * g * theta.sin()
         theta_dot_dot = 3 * theta_dot_dot / (temp * l)
 
-        mean = torch.stack(
+        return torch.stack(
             [
-                theta + theta_dot * dt,
-                theta_dot + theta_dot_dot * dt,
+                theta_dot,
+                theta_dot_dot,
             ], dim=-1)
-        return encode(mean, V=var, encoding=encoding)

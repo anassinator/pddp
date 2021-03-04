@@ -20,8 +20,6 @@ from torch.nn import Parameter
 
 from ...models.base import DynamicsModel
 from ...utils.classproperty import classproperty
-from ...utils.angular import augment_state, reduce_state
-from ...utils.encoding import StateEncoding, decode_var, decode_mean, encode
 
 
 class CartpoleDynamicsModel(DynamicsModel):
@@ -85,32 +83,26 @@ class CartpoleDynamicsModel(DynamicsModel):
         # No need: this is an exact dynamics model.
         pass
 
-    def forward(self, z, u, i, encoding=StateEncoding.DEFAULT, **kwargs):
+    def dynamics(self, z, u, i, **kwargs):
         """Dynamics model function.
 
         Args:
             z (Tensor<..., encoded_state_size>): Encoded state distribution.
             u (Tensor<..., action_size>): Action vector(s).
-            i (int): Time index.
-            encoding (int): StateEncoding enum.
+            i (Tensor<...>): Time index.
 
         Returns:
-            Next encoded state distribution (Tensor<..., encoded_state_size>).
+            derivatives of current state wrt to time (Tensor<..., encoded_state_size>).
         """
-        dt = self.dt
         mc = self.mc
         mp = self.mp
         l = self.l
         mu = self.mu
         g = self.g
 
-        mean = decode_mean(z, encoding)
-        var = decode_var(z, encoding)
-
-        x = mean[..., 0]
-        x_dot = mean[..., 1]
-        theta = mean[..., 2]
-        theta_dot = mean[..., 3]
+        x_dot = z[..., 1]
+        theta = z[..., 2]
+        theta_dot = z[..., 3]
         F = u[..., 0]
 
         sin_theta = theta.sin()
@@ -125,17 +117,4 @@ class CartpoleDynamicsModel(DynamicsModel):
             (mc + mp) * a1 + a2 * cos_theta)) / (l * a3)
         x_dot_dot = (2 * a0 + 3 * mp * a1 * cos_theta + 4 * a2) / a3
 
-        # For symplectic integration.
-        new_x_dot = x_dot + x_dot_dot * dt
-        new_theta_dot = theta_dot + theta_dot_dot * dt
-
-        mean = torch.stack(
-            [
-                x + new_x_dot * dt,
-                new_x_dot,
-                theta + new_theta_dot * dt,
-                new_theta_dot,
-            ],
-            dim=-1)
-
-        return encode(mean, V=var, encoding=encoding)
+        return torch.stack([x_dot, x_dot_dot, theta_dot, theta_dot_dot], dim=-1)
